@@ -167,11 +167,26 @@ function mealRow(m, withDelete) {
   if (m.late) { const t = document.createElement("span"); t.className = "tag lt"; t.textContent = "🌙"; a.append(t); }
   const b = document.createElement("div"); b.className = "b";
   const t = m.ts ? new Date(m.ts).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }) : "";
-  b.textContent = `${fmt(m.eatenKcal || 0)} kcal · ${m.portion >= 0.99 ? "전부" : "권장량(" + r0((m.portion || 0) * 100) + "%)"} · ${t}`;
+  const shTxt = m.share && m.share < 0.999 ? `내 몫 ${shareLabel(m.share)} · ` : "";
+  b.textContent = `${fmt(m.eatenKcal || 0)} kcal · ${shTxt}${m.portion >= 0.99 ? "전부" : "권장량(" + r0((m.portion || 0) * 100) + "%)"}` + (t && m.date === todayKey() ? ` · ${t}` : "");
   info.append(a, b); row.append(pic, info);
-  if (withDelete) { const del = document.createElement("button"); del.className = "del"; del.textContent = "✕"; del.setAttribute("aria-label", "삭제"); del.onclick = () => deleteMeal(m.id); row.append(del); }
+  if (withDelete) {
+    // 실수로 지우지 않게 두 번 눌러야 삭제 (첫 번째: '삭제?'로 바뀜, 3초 지나면 원래대로)
+    const del = document.createElement("button"); del.className = "del"; del.textContent = "✕"; del.setAttribute("aria-label", (m.title || "식사") + " 기록 삭제");
+    del.onclick = () => {
+      if (!del.classList.contains("ask")) {
+        del.classList.add("ask"); del.textContent = "삭제?";
+        clearTimeout(del._t); del._t = setTimeout(() => { del.classList.remove("ask"); del.textContent = "✕"; }, 3000);
+        return;
+      }
+      deleteMeal(m.id);
+    };
+    row.append(del);
+  }
   return row;
 }
+const SHARE_NAMES = [[1, "혼자 다"], [0.75, "3/4"], [0.6667, "2/3"], [0.5, "1/2"], [0.3333, "1/3"], [0.25, "1/4"]];
+function shareLabel(v) { const f = SHARE_NAMES.find(([x]) => Math.abs(x - v) < 0.01); return f ? f[1] : r0(v * 100) + "%"; }
 function renderToday() {
   const c = calc();
   const pct = Math.min(1, c.eaten / c.daily);
@@ -473,7 +488,7 @@ async function runAnalysis(correction) {
 function renderShareDate() {
   const sh = current.share || 1;
   document.querySelectorAll("#shareSeg button").forEach(b => b.classList.toggle("on", Math.abs(+b.dataset.s - sh) < 0.01));
-  $("shareNote").textContent = sh < 0.999 ? `사진 속 전체의 ${r0(sh * 100)}%만 내 몫으로 계산했어요` : "혼자 다 먹는 걸로 계산했어요";
+  $("shareNote").textContent = sh < 0.999 ? `사진 속 전체의 ${shareLabel(sh)}(${r0(sh * 100)}%)만 내 몫으로 계산했어요` : "혼자 다 먹는 걸로 계산했어요";
   $("sTotalL").textContent = sh < 0.999 ? `내 몫 (${r0(sh * 100)}%)` : "사진 속 총량";
   const t = todayKey(); $("mealDate").max = t; $("mealDate").value = current.date || t;
   const d = current.date || t, [, mm, dd] = d.split("-").map(Number);
@@ -636,7 +651,11 @@ async function saveMeal(portion) {
   } catch (e) { toast("저장에 실패했어요. 다시 눌러 주세요"); }
 }
 async function deleteMeal(id) {
-  try { await idb.del(id); await loadToday(); renderAll(); toast("기록을 지웠어요"); } catch (e) { toast("삭제에 실패했어요"); }
+  try {
+    await idb.del(id); await loadToday(); renderAll();
+    if ($("v-cal").classList.contains("on")) await renderCalendar();
+    toast("기록을 지웠어요");
+  } catch (e) { toast("삭제에 실패했어요"); }
 }
 $("saveAct").onclick = () => {
   const s = num($("actSteps").value), m = num($("actMin").value); const a = {};
@@ -752,7 +771,7 @@ function renderDay(k) {
   if (!info || !info.meals.length) { $("daySum").textContent = "이 날은 식사 기록이 없어요." + (wt ? ` · 체중 ${wt}kg` : ""); return; }
   const diff = info.kcal - info.target;
   $("daySum").textContent = (info.kcal > info.target ? "🐷 적정 칼로리 초과 · " : "🐰 적정 칼로리 이하 · ") + `총 ${fmt(info.kcal)} / 목표 ${fmt(info.target)} kcal (${diff > 0 ? "+" : ""}${fmt(diff)}) · 탄 ${r0(info.carbs)}g · 단 ${r0(info.protein)}g · 지 ${r0(info.fat)}g` + (info.alcohol ? ` · 🍺 ${fmt(info.alcohol)}kcal` : "") + (wt ? ` · 체중 ${wt}kg` : "");
-  [...info.meals].sort((a, b) => (a.ts || 0) - (b.ts || 0)).forEach(m => box.append(mealRow(m, false)));
+  [...info.meals].sort((a, b) => (a.ts || 0) - (b.ts || 0)).forEach(m => box.append(mealRow(m, true)));
 }
 
 /* ================= 분석 ================= */

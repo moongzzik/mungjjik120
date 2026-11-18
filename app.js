@@ -287,8 +287,10 @@ async function discoverModel() {
     return ok[0] || null;
   } catch (e) { return null; }
 }
+let aiTrace = [];   // 이번 요청에서 시도한 모델들 (속도 비교용)
 async function gemini(parts, opts = {}, _retry) {
   if (!settings.apiKey) throw { code: "nokey" };
+  if (!_retry) aiTrace = [];
   try { return await geminiOnce(parts, opts); }
   catch (e) {
     if (e && (e.code === "busy" || (e.code === "network" && navigator.onLine !== false)) && !_retry) {
@@ -308,6 +310,7 @@ async function geminiOnce(parts, { json = true, signal } = {}) {
   let last = { code: "model" }, busy = null, net = null;
   for (let i = 0; i < models.length; i++) {
     const m = models[i];
+    aiTrace.push(m);
     const cfg = json ? { responseMimeType: "application/json" } : {};
     // 생각(thinking)을 짧게 해서 답을 빨리 받기 — 지원 안 하는 모델이면 빼고 다시 시도
     const think = !(settings.noThink || {})[m];
@@ -424,14 +427,20 @@ async function runAnalysis(correction) {
     text += `\n\n[이전 분석 결과]\n${JSON.stringify(current.r)}\n\n[사용자 정정 — 최우선으로 반영]\n"${correction}"\n정정 내용을 반영해 음식 종류·양·칼로리를 다시 계산하고, 같은 JSON 형식으로만 출력하세요.`;
   }
   abortCtl = new AbortController();
+  const t0 = Date.now();
+  $("busyTime").textContent = "0초";
+  const tick = setInterval(() => { $("busyTime").textContent = Math.floor((Date.now() - t0) / 1000) + "초"; }, 1000);
   let r;
   try { r = await gemini([{ text }, { inline_data: { mime_type: "image/jpeg", data: current.b64 } }], { signal: abortCtl.signal }); }
   catch (e) {
-    abortCtl = null;
+    clearInterval(tick); abortCtl = null;
     if (e && e.name === "AbortError") { showStage(current.r ? "result" : "start"); return; }
-    console.error(e); showStage(current.r ? "result" : "start"); showErr(e); toast(aiError(e)); return;
+    console.error(e); showStage(current.r ? "result" : "start"); showErr(e); toast(aiError(e));
+    $("errBox").textContent += `\n⏱️ ${((Date.now() - t0) / 1000).toFixed(1)}초 만에 실패 · 시도한 모델: ${aiTrace.join(" → ")}`;
+    return;
   }
-  abortCtl = null;
+  clearInterval(tick); abortCtl = null;
+  current.stat = { sec: (Date.now() - t0) / 1000, model: aiTrace[aiTrace.length - 1], tries: aiTrace.length };
   if (!r || r.is_food === false || !Array.isArray(r.foods) || !r.foods.length) {
     showStage("start"); toast("음식을 찾지 못했어요. 음식이 잘 보이게 다시 찍어 주세요"); current = null; return;
   }
@@ -512,6 +521,8 @@ function showResult() {
     const k = document.createElement("div"); k.className = "kc"; k.textContent = fmt(f.kcal) + " kcal";
     li.append(L, k); ul.append(li);
   });
+  const st = current.stat;
+  $("aiStat").textContent = st ? `⏱️ ${st.sec.toFixed(1)}초 걸림 · 사용 모델: ${st.model}` + (st.tries > 1 ? ` (다른 모델 ${st.tries - 1}번 실패 후)` : "") : "";
   $("aiNote").textContent = r.reference_object ? `📏 기준 물체: ${r.reference_object}` : "📏 기준 물체 없이 그릇 크기로 추정했어요. 숟가락을 옆에 두면 더 정확해져요.";
   $("eatAllowed").textContent = allOk ? "알겠어, 잘 먹을게!" : "알겠어, 여기까지만!";
   $("eatAll").classList.toggle("hidden", allOk);
@@ -595,7 +606,8 @@ $("testKey").onclick = async () => {
   $("testKey").disabled = true; $("testKey").textContent = "확인 중...";
   $("keyErr").textContent = "";
   if (settings.apiKey.length < 20) { $("keyErr").textContent = "⚠️ API 키가 너무 짧아요. Google AI Studio에서 키 전체를 다시 복사해 넣어 주세요"; $("testKey").disabled = false; $("testKey").textContent = "연결 테스트"; return; }
-  try { await gemini([{ text: "한 단어로만 답하세요: 연결" }], { json: false }); const m = settings.workingModel || settings.model || DEFAULT_MODEL; toast(`연결 성공! (${m})`); $("keyErr").textContent = `✅ 연결 성공 · 사용 모델: ${m}`; }
+  const t0 = Date.now();
+  try { await gemini([{ text: "한 단어로만 답하세요: 연결" }], { json: false }); const m = aiTrace[aiTrace.length - 1] || settings.workingModel || DEFAULT_MODEL; const sec = ((Date.now() - t0) / 1000).toFixed(1); toast(`연결 성공! (${m})`); $("keyErr").textContent = `✅ 연결 성공 · 사용 모델: ${m} · ${sec}초` + (aiTrace.length > 1 ? `\n(앞서 실패한 모델: ${aiTrace.slice(0, -1).join(", ")})` : ""); }
   catch (e) { toast(aiError(e)); $("keyErr").textContent = "⚠️ " + aiError(e) + (e && e.message ? "\n[자세한 원인] " + String(e.message).slice(0, 220) : ""); }
   finally { $("testKey").disabled = false; $("testKey").textContent = "연결 테스트"; }
 };

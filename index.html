@@ -464,6 +464,7 @@
           <button class="btn primary" id="saveKey">저장</button>
           <button class="btn ghost" id="testKey">연결 테스트</button>
         </div>
+        <p class="muted" id="keyErr" style="margin-top:10px;white-space:pre-wrap;color:#991b1b"></p>
         <p class="muted" style="margin-top:10px">키는 이 폰에만 저장되고 Google 외에는 어디로도 보내지 않아요. 키가 없으면 <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a>에서 무료로 발급받을 수 있어요.</p>
       </div>
 
@@ -500,7 +501,7 @@
 </div>
 <div class="toast" id="toast"></div>
 <canvas id="grab" class="hidden"></canvas>
-<script src="app.js"></script>
+<script src="app.js?v=4"></script>
 <script>
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
 </script>

@@ -569,7 +569,7 @@ $("testKey").onclick = async () => {
   $("saveKey").click(); if (!settings.apiKey) return;
   $("testKey").disabled = true; $("testKey").textContent = "확인 중...";
   $("keyErr").textContent = "";
-  if (!/^AIza[0-9A-Za-z_-]{30,}$/.test(settings.apiKey)) { $("keyErr").textContent = "⚠️ API 키 모양이 이상해요. AIza로 시작하는 키 전체를 다시 복사해 넣어 주세요"; $("testKey").disabled = false; $("testKey").textContent = "연결 테스트"; return; }
+  if (settings.apiKey.length < 20) { $("keyErr").textContent = "⚠️ API 키가 너무 짧아요. Google AI Studio에서 키 전체를 다시 복사해 넣어 주세요"; $("testKey").disabled = false; $("testKey").textContent = "연결 테스트"; return; }
   try { await gemini([{ text: "한 단어로만 답하세요: 연결" }], { json: false }); const m = settings.workingModel || settings.model || DEFAULT_MODEL; toast(`연결 성공! (${m})`); $("keyErr").textContent = `✅ 연결 성공 · 사용 모델: ${m}`; }
   catch (e) { toast(aiError(e)); $("keyErr").textContent = "⚠️ " + aiError(e) + (e && e.message ? "\n[자세한 원인] " + String(e.message).slice(0, 220) : ""); }
   finally { $("testKey").disabled = false; $("testKey").textContent = "연결 테스트"; }

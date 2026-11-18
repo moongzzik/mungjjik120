@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#10b981">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="뭉찍 120살">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>뭉찍 120살</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --green:#10b981; --green-d:#059669; --green-l:#d1fae5;
+    --red:#ef4444; --red-l:#fee2e2; --amber:#f59e0b;
+    --ink:#1f2937; --sub:#6b7280; --line:#e5e7eb; --bg:#f3f4f6; --card:#fff;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased}
+  .app{max-width:480px;margin:0 auto;min-height:100vh;background:var(--card);position:relative;padding-bottom:84px}
+  header{padding:18px 20px 14px;background:linear-gradient(135deg,#065f46,#10b981);color:#fff}
+  header h1{font-size:20px;font-weight:900;letter-spacing:-.5px}
+  header p{font-size:12px;opacity:.9;margin-top:4px}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+  .chip{background:rgba(255,255,255,.18);border-radius:999px;padding:4px 10px;font-size:11.5px;font-weight:500}
+  .chip b{font-weight:900}
+  main{padding:16px}
+  .view{display:none}.view.on{display:block}
+  .card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:16px;margin-bottom:14px}
+  .card h2{font-size:15px;font-weight:700;margin-bottom:10px}
+  .muted{color:var(--sub);font-size:12.5px;line-height:1.55}
+  .btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;border:0;border-radius:14px;padding:14px;font:700 15px 'Noto Sans KR';cursor:pointer;transition:transform .08s, background .2s}
+  .btn:active{transform:scale(.98)}
+  .btn.primary{background:var(--green);color:#fff}.btn.primary:active{background:var(--green-d)}
+  .btn.ghost{background:#f3f4f6;color:#374151}
+  .btn.big{padding:22px;font-size:17px;border-radius:18px}
+  .btn:disabled{opacity:.5}
+  .row{display:flex;gap:10px}
+  .row>*{flex:1}
+  /* Meal type segmented */
+  .seg{display:flex;background:#f3f4f6;border-radius:12px;padding:4px;gap:4px;margin-bottom:12px}
+  .seg button{flex:1;border:0;background:transparent;padding:9px 0;border-radius:9px;font:500 13px 'Noto Sans KR';color:#4b5563;cursor:pointer}
+  .seg button.on{background:#fff;color:var(--green-d);font-weight:700;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+  .budget{display:flex;justify-content:space-between;align-items:center;background:var(--green-l);border-radius:12px;padding:12px 14px;margin-bottom:12px}
+  .budget .k{font-size:22px;font-weight:900;color:var(--green-d)}
+  .budget .t{font-size:12px;color:#065f46}
+  .drop{border:2px dashed #cbd5e1;border-radius:18px;padding:28px 16px;text-align:center;color:var(--sub);font-size:13px}
+  .drop .ico{font-size:44px;margin-bottom:6px}
+  .tip{font-size:12px;color:var(--sub);background:#f9fafb;border-radius:10px;padding:10px 12px;margin-top:12px;line-height:1.6}
+  /* Analyzing */
+  .scan-wrap{position:relative;border-radius:18px;overflow:hidden;background:#111;aspect-ratio:3/4}
+  .scan-wrap img{width:100%;height:100%;object-fit:cover;display:block}
+  .scan-dim{position:absolute;inset:0;background:rgba(0,0,0,.45)}
+  .scan-line{position:absolute;left:0;width:100%;height:4px;background:linear-gradient(to right,transparent,var(--green),transparent);box-shadow:0 0 16px var(--green);animation:scan 2s infinite ease-in-out}
+  @keyframes scan{0%{top:0}50%{top:calc(100% - 4px)}100%{top:0}}
+  .scan-text{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;text-align:center;padding:20px}
+  .scan-text .cube{font-size:44px;animation:bounce 1s infinite}
+  @keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
+  .scan-text h3{font-size:20px;font-weight:900;margin-top:10px}
+  .scan-text p{font-size:12.5px;color:#a7f3d0;margin-top:6px}
+  /* Result */
+  .res-img{position:relative;border-radius:18px;overflow:hidden;background:#111;aspect-ratio:3/4}
+  .res-img img{width:100%;height:100%;object-fit:cover;display:block}
+  .shade{position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.62);transition:height 1s ease-out}
+  .cut{position:absolute;left:0;width:100%;height:4px;background-image:linear-gradient(to right,var(--red) 55%,transparent 55%);background-size:18px 4px;transform:scaleX(0);transform-origin:left;transition:transform 1s ease-out;z-index:3}
+  .cut.on{transform:scaleX(1)}
+  .cut-label{position:absolute;left:50%;transform:translate(-50%,-130%);background:var(--red);color:#fff;padding:5px 12px;border-radius:999px;font-weight:700;font-size:13px;white-space:nowrap;opacity:0;transition:opacity .5s ease-in 1s;z-index:4}
+  .cut-label.on{opacity:1}
+  .ok-badge{position:absolute;top:14px;left:50%;transform:translateX(-50%);background:var(--green);color:#fff;padding:7px 14px;border-radius:999px;font-weight:900;font-size:14px;white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,.25)}
+  .addon{position:absolute;top:14px;right:14px;background:#fff;border-radius:16px;padding:8px 10px;display:flex;flex-direction:column;align-items:center;box-shadow:0 4px 12px rgba(0,0,0,.25);animation:pulse 1.6s infinite;max-width:92px;text-align:center}
+  .addon .e{font-size:30px;line-height:1}
+  .addon span{font-size:10.5px;font-weight:700;color:var(--green-d);margin-top:3px;line-height:1.25}
+  @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}
+  .bubble{position:relative;background:#fff;border:2px solid var(--green);border-radius:14px;padding:14px 16px;margin:16px 0 22px;box-shadow:0 4px 8px rgba(0,0,0,.06)}
+  .bubble::after{content:'';position:absolute;bottom:-14px;left:22%;border:14px solid transparent;border-top-color:var(--green);border-bottom:0;border-left:0}
+  .bubble .hd{display:flex;align-items:center;gap:6px;font-weight:700;font-size:14px;margin-bottom:6px}
+  .bubble .hd.warn{color:var(--red)}.bubble .hd.good{color:var(--green-d)}
+  .bubble p{font-size:14px;line-height:1.7}
+  .bubble p b{color:var(--red)}
+  .alert{background:var(--red-l);color:#991b1b;border-radius:12px;padding:12px 14px;font-size:13.5px;font-weight:500;margin-bottom:12px;line-height:1.55}
+  .stats{display:flex;justify-content:space-between;background:#f9fafb;border-radius:14px;padding:12px 6px;margin-bottom:12px}
+  .stats>div{flex:1;text-align:center;border-right:1px solid var(--line)}
+  .stats>div:last-child{border-right:0}
+  .stats .l{font-size:11px;color:var(--sub)}
+  .stats .v{font-size:15px;font-weight:900;margin-top:2px}
+  .foods{list-style:none}
+  .foods li{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #f3f4f6;font-size:14px}
+  .foods li:last-child{border-bottom:0}
+  .foods .nm{font-weight:500}
+  .foods .sm{font-size:11.5px;color:var(--sub);margin-top:2px}
+  .foods .kc{font-weight:700;white-space:nowrap}
+  .conf{display:inline-block;font-size:10px;padding:1px 6px;border-radius:6px;margin-left:4px;vertical-align:middle}
+  .conf.h{background:var(--green-l);color:#065f46}.conf.m{background:#fef3c7;color:#92400e}.conf.l{background:var(--red-l);color:#991b1b}
+  /* Today */
+  .ring-wrap{display:flex;align-items:center;gap:18px}
+  .ring-txt .big{font-size:26px;font-weight:900}
+  .ring-txt .sm{font-size:12.5px;color:var(--sub);margin-top:2px}
+  .bar{height:8px;background:#f3f4f6;border-radius:99px;overflow:hidden;margin-top:4px}
+  .bar>i{display:block;height:100%;border-radius:99px}
+  .macro{margin-top:10px;font-size:12.5px}
+  .macro .top{display:flex;justify-content:space-between}
+  .meal{display:flex;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid #f3f4f6}
+  .meal:last-child{border-bottom:0}
+  .meal img,.meal .ph{width:54px;height:54px;border-radius:12px;object-fit:cover;background:#f3f4f6;flex:none;display:flex;align-items:center;justify-content:center;font-size:24px}
+  .meal .info{flex:1;min-width:0}
+  .meal .info .a{font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .meal .info .b{font-size:12px;color:var(--sub);margin-top:2px}
+  .meal .del{border:0;background:none;color:#9ca3af;font-size:18px;padding:6px;cursor:pointer}
+  /* Form */
+  label.f{display:block;margin-bottom:12px}
+  label.f span{display:block;font-size:12.5px;color:var(--sub);margin-bottom:5px;font-weight:500}
+  input,select{width:100%;border:1px solid #d1d5db;border-radius:11px;padding:11px 12px;font:15px 'Noto Sans KR';color:var(--ink);background:#fff}
+  input:focus,select:focus{outline:2px solid var(--green-l);border-color:var(--green)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 10px}
+  .calc{background:#f9fafb;border-radius:12px;padding:12px 14px;font-size:13px;line-height:1.8}
+  .calc b{float:right}
+  /* nav */
+  nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;background:#fff;border-top:1px solid var(--line);display:flex;padding:8px 0 calc(8px + env(safe-area-inset-bottom));z-index:20}
+  nav button{flex:1;border:0;background:none;display:flex;flex-direction:column;align-items:center;gap:2px;font:500 11.5px 'Noto Sans KR';color:#9ca3af;cursor:pointer;padding:4px 0}
+  nav button .i{font-size:22px;filter:grayscale(1);opacity:.6}
+  nav button.on{color:var(--green-d);font-weight:700}
+  nav button.on .i{filter:none;opacity:1}
+  .calhd{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+  .calhd b{font-size:16px}
+  .calhd button{border:0;background:#f3f4f6;width:36px;height:36px;border-radius:10px;font-size:18px;cursor:pointer}
+  .calgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+  .calgrid .wd{text-align:center;font-size:11px;color:var(--sub);padding:2px 0}
+  .calgrid .wd.sun{color:var(--red)}
+  .cell{aspect-ratio:1/1.15;border-radius:9px;background:#f9fafb;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;border:2px solid transparent;padding:2px}
+  .cell .d{font-size:12.5px;font-weight:500}
+  .cell .kc{font-size:9.5px;color:#374151;margin-top:1px;font-weight:700}
+  .cell.empty{background:transparent;cursor:default}
+  .cell.today{border-color:var(--ink)}
+  .cell.sel{border-color:var(--green)}
+  .cell.future{opacity:.35}
+  .lv1{background:#d1fae5}.lv2{background:#6ee7b7}.lv3{background:#fde68a}.lv4{background:#fca5a5}
+  .legend{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;font-size:11px;color:var(--sub)}
+  .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:3px;vertical-align:-1px}
+  .tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .tile{background:#f9fafb;border-radius:12px;padding:12px}
+  .tile .l{font-size:11.5px;color:var(--sub)}
+  .tile .v{font-size:20px;font-weight:900;margin-top:2px}
+  .tile .s{font-size:11px;color:var(--sub);margin-top:2px}
+  .hbar{display:flex;height:22px;border-radius:8px;overflow:hidden;margin:6px 0 4px}
+  .hbar>div{display:flex;align-items:center;justify-content:center;font-size:10.5px;color:#fff;font-weight:700;white-space:nowrap}
+  .rank{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f3f4f6;font-size:13.5px}
+  .rank:last-child{border-bottom:0}
+  .report{font-size:14px;line-height:1.75;white-space:pre-wrap;margin-top:10px}
+  .toast{position:fixed;top:16px;left:50%;transform:translateX(-50%) translateY(-120px);background:#1f2937;color:#fff;padding:11px 18px;border-radius:999px;font-size:13.5px;font-weight:500;z-index:50;transition:transform .3s;max-width:92%;text-align:center}
+  .toast.on{transform:translateX(-50%) translateY(0)}
+  .sync{font-size:11px;opacity:.85;margin-top:6px}
+  .hidden{display:none!important}
+  .who{display:flex;gap:6px;margin-top:10px}
+  .who button{border:1.5px solid rgba(255,255,255,.5);background:transparent;color:#fff;border-radius:999px;padding:6px 14px;font:700 13px 'Noto Sans KR';cursor:pointer}
+  .who button.on{background:#fff;color:#065f46;border-color:#fff}
+  .warn2{background:#fef3c7;color:#92400e;border-radius:12px;padding:12px 14px;font-size:13.5px;font-weight:500;margin-bottom:12px;line-height:1.55}
+  .fix{display:flex;gap:6px;margin-top:8px}
+  .fix input{flex:1}
+  .fix button{border:0;border-radius:11px;padding:0 14px;font:700 14px 'Noto Sans KR';cursor:pointer}
+  .fix .go{background:var(--green);color:#fff}
+  .fix .mic{background:#f3f4f6;font-size:18px}
+  .fix .mic.on{background:var(--red-l)}
+  .presets{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+  .presets button{border:1px solid var(--line);background:#fff;border-radius:999px;padding:6px 12px;font:500 12.5px 'Noto Sans KR';cursor:pointer}
+  .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:0 8px}
+  .cell .kc em{font-style:normal}
+  .tag{display:inline-block;font-size:10.5px;border-radius:6px;padding:1px 6px;margin-left:4px;vertical-align:1px;font-weight:700}
+  .tag.al{background:#fef3c7;color:#92400e}.tag.lt{background:#e0e7ff;color:#3730a3}
+  .cam{position:fixed;inset:0;background:#000;z-index:100;display:flex;flex-direction:column}
+  .cam video{flex:1;width:100%;object-fit:cover;min-height:0}
+  .cam-guide{position:absolute;inset:0 0 120px 0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none}
+  .cam-guide .ring{width:72vw;max-width:300px;aspect-ratio:1;border:2px dashed rgba(255,255,255,.6);border-radius:50%}
+  .cam-guide p{color:rgba(255,255,255,.85);font-size:13px;text-align:center;margin-top:12px;text-shadow:0 1px 3px #000}
+  .cam-ctl{height:120px;display:flex;align-items:center;justify-content:space-around;padding-bottom:env(safe-area-inset-bottom);background:#000}
+  .cam-ctl button,.cam-ctl label{width:52px;height:52px;border-radius:50%;border:0;background:rgba(255,255,255,.15);color:#fff;font-size:22px;display:flex;align-items:center;justify-content:center;cursor:pointer}
+  .cam-ctl #shutter{width:78px;height:78px;background:#fff;border:4px solid #9ca3af}
+  .cam-ctl #shutter span{width:62px;height:62px;border-radius:50%;border:2px solid rgba(0,0,0,.1)}
+  .cam-ctl #shutter:active{background:#e5e7eb}
+  header{padding-top:calc(18px + env(safe-area-inset-top))}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>💚 뭉찍 120살</h1>
+    <p id="hdrSub"></p>
+    <div class="who" id="who"></div>
+    <div class="chips" id="hdrChips"></div>
+  </header>
+
+  <main>
+    <!-- ===== 촬영 ===== -->
+    <section class="view on" id="v-scan">
+      <div class="alert hidden" id="keyAlert">Gemini API 키가 아직 없어요. <b>프로필 탭 → Gemini 설정</b>에서 키를 넣어 주세요.</div>
+      <div class="warn2 hidden" id="profAlert">프로필(체중·목표 체중)을 먼저 입력해 주세요. 지금은 임시값으로 계산해요.</div>
+      <div id="scanStart">
+        <div class="seg" id="mealSeg">
+          <button data-m="아침">🌅 아침</button>
+          <button data-m="점심">☀️ 점심</button>
+          <button data-m="저녁">🌙 저녁</button>
+          <button data-m="간식">🍪 간식·야식</button>
+        </div>
+        <div class="budget">
+          <div><div class="t"><span id="bWho"></span> 이번 <span id="bMeal">끼니</span>에 먹어도 되는 양</div><div class="k"><span id="bKcal">-</span> kcal</div></div>
+          <div class="t" style="text-align:right">오늘 남은 칼로리<br><b id="bRemain">-</b> kcal</div>
+        </div>
+        <button class="btn primary big" id="openCam">📷 음식 사진 찍기</button>
+        <input type="file" id="fileCam" accept="image/*" capture="environment" class="hidden">
+        <div style="height:10px"></div>
+        <label class="btn ghost" for="fileLib">🖼️ 앨범에서 사진 고르기</label>
+        <input type="file" id="fileLib" accept="image/*" class="hidden">
+        <div class="tip">
+          📏 <b>더 정확하게 재려면</b> 숟가락·젓가락·신용카드를 음식 옆에 같이 두고, 위에서 비스듬히(45°) 찍어 주세요.<br>
+          🍺 술도 같이 찍으면 술 칼로리까지 계산해요.<br>
+          ⚠️ 사진 기반 추정이라 ±20~30% 오차가 있을 수 있어요. 틀리면 결과 화면에서 말로 고쳐 주세요.
+        </div>
+      </div>
+
+      <div id="scanBusy" class="hidden">
+        <div class="scan-wrap">
+          <img id="busyImg" alt="">
+          <div class="scan-dim"></div>
+          <div class="scan-line"></div>
+          <div class="scan-text">
+            <div class="cube">🧊</div>
+            <h3 id="busyTitle">음식 부피 스캔 중...</h3>
+            <p>Gemini가 인바디 데이터와 대조해서 적정량을 계산하고 있어요</p>
+          </div>
+        </div>
+        <div style="height:12px"></div>
+        <button class="btn ghost" id="cancelBtn">취소</button>
+      </div>
+
+      <div id="scanResult" class="hidden">
+        <div class="res-img">
+          <img id="resImg" alt="촬영한 음식">
+          <div class="shade" id="shade" style="height:0"></div>
+          <div class="cut" id="cut"></div>
+          <div class="cut-label" id="cutLabel"></div>
+          <div class="ok-badge hidden" id="okBadge">👍 다 먹어도 OK!</div>
+          <div class="addon hidden" id="addon"><div class="e" id="addonE">🍳</div><span id="addonT">+ 추천</span></div>
+        </div>
+
+        <div class="bubble">
+          <div class="hd" id="bubHd"></div>
+          <p id="bubTxt"></p>
+        </div>
+
+        <div class="alert hidden" id="allergyAlert"></div>
+        <div class="warn2 hidden" id="drinkAlert"></div>
+
+        <div class="stats">
+          <div><div class="l">사진 속 총량</div><div class="v" id="sTotal">-</div></div>
+          <div><div class="l">먹어도 되는 양</div><div class="v" id="sAllow" style="color:var(--green-d)">-</div></div>
+          <div><div class="l">탄수화물</div><div class="v" id="sCarb">-</div></div>
+          <div><div class="l">단백질</div><div class="v" id="sProt">-</div></div>
+        </div>
+
+        <div class="card">
+          <h2>🔍 Gemini가 찾은 음식</h2>
+          <ul class="foods" id="foodList"></ul>
+          <p class="muted" id="aiNote" style="margin-top:8px"></p>
+        </div>
+
+        <div class="card">
+          <h2>🗣️ 틀렸으면 말로 알려줘</h2>
+          <p class="muted">예: "김밥 반 줄만 있어", "밥은 반 공기야", "이건 제로콜라야", "오이는 뺐어"</p>
+          <div class="fix">
+            <input id="fixText" placeholder="고칠 내용을 말하거나 적어 주세요">
+            <button class="mic hidden" id="micBtn" aria-label="말로 입력">🎤</button>
+            <button class="go" id="fixBtn">다시 계산</button>
+          </div>
+        </div>
+
+        <div class="row" style="margin-bottom:10px">
+          <button class="btn primary" id="eatAllowed">알겠어, 여기까지만!</button>
+          <button class="btn ghost" id="eatAll">다 먹었어 😅</button>
+        </div>
+        <button class="btn ghost" id="retake">다시 찍기</button>
+      </div>
+    </section>
+
+    <!-- ===== 오늘 ===== -->
+    <section class="view" id="v-today">
+      <div class="card">
+        <div class="ring-wrap">
+          <svg width="110" height="110" viewBox="0 0 110 110">
+            <circle cx="55" cy="55" r="46" fill="none" stroke="#f3f4f6" stroke-width="12"/>
+            <circle id="ring" cx="55" cy="55" r="46" fill="none" stroke="#10b981" stroke-width="12" stroke-linecap="round" stroke-dasharray="289" stroke-dashoffset="289" transform="rotate(-90 55 55)" style="transition:stroke-dashoffset .8s"/>
+            <text x="55" y="61" text-anchor="middle" font-size="18" font-weight="900" fill="#1f2937" id="ringPct">0%</text>
+          </svg>
+          <div class="ring-txt">
+            <div class="big"><span id="tEaten">0</span> <span style="font-size:14px;color:#6b7280">/ <span id="tTarget">-</span> kcal</span></div>
+            <div class="sm" id="tMsg">오늘 기록이 아직 없어요</div>
+          </div>
+        </div>
+        <div class="macro"><div class="top"><span>🍚 탄수화물</span><span id="mC">0g</span></div><div class="bar"><i id="mCb" style="background:#f59e0b;width:0"></i></div></div>
+        <div class="macro"><div class="top"><span>🥩 단백질</span><span id="mP">0g</span></div><div class="bar"><i id="mPb" style="background:#10b981;width:0"></i></div></div>
+        <div class="macro"><div class="top"><span>🧈 지방</span><span id="mF">0g</span></div><div class="bar"><i id="mFb" style="background:#6366f1;width:0"></i></div></div>
+      </div>
+
+      <div class="card">
+        <h2>⚖️ 오늘 체중</h2>
+        <div class="fix" style="margin-top:0">
+          <input type="number" id="wInput" inputmode="decimal" step="0.1" placeholder="예: 76.8">
+          <button class="go" id="wSave">기록</button>
+        </div>
+        <p class="muted" id="wNote" style="margin-top:8px">아침 공복에 재면 가장 정확해요. 기록하면 목표 칼로리가 자동으로 다시 계산돼요.</p>
+      </div>
+
+      <div class="card">
+        <h2>🏃 오늘 활동량</h2>
+        <div class="grid2">
+          <label class="f"><span>걸음 수</span><input type="number" id="actSteps" inputmode="numeric" placeholder="예: 2300"></label>
+          <label class="f"><span>운동 시간(분)</span><input type="number" id="actMin" inputmode="numeric" placeholder="예: 30"></label>
+        </div>
+        <button class="btn ghost" id="saveAct">활동량 반영하기</button>
+        <p class="muted" style="margin-top:8px">비워 두면 평소 활동 수준으로 계산해요.</p>
+      </div>
+
+      <div class="card">
+        <h2>🍽️ 오늘 먹은 것</h2>
+        <div id="mealList"></div>
+      </div>
+    </section>
+
+    <!-- ===== 달력 ===== -->
+    <section class="view" id="v-cal">
+      <div class="card">
+        <div class="calhd"><button id="calPrev" aria-label="이전 달">‹</button><b id="calTitle"></b><button id="calNext" aria-label="다음 달">›</button></div>
+        <div class="calgrid" id="calGrid"></div>
+        <div class="legend">
+          <span><i style="background:#d1fae5"></i>목표 이하</span>
+          <span><i style="background:#6ee7b7"></i>딱 좋음</span>
+          <span><i style="background:#fde68a"></i>조금 초과</span>
+          <span><i style="background:#fca5a5"></i>많이 초과</span>
+          <span>🍺 음주 · 🌙 야식</span>
+        </div>
+        <div class="tiles" style="margin-top:12px">
+          <div class="tile"><div class="l">이번 달 기록한 날</div><div class="v" id="mDays">-</div></div>
+          <div class="tile"><div class="l">하루 평균</div><div class="v" id="mAvg">-</div></div>
+        </div>
+      </div>
+      <div class="card">
+        <h2 id="dayTitle">날짜를 눌러 보세요</h2>
+        <div id="daySum" class="muted"></div>
+        <div id="dayMeals"></div>
+      </div>
+    </section>
+
+    <!-- ===== 분석 ===== -->
+    <section class="view" id="v-stats">
+      <div class="seg" id="periodSeg">
+        <button data-p="7" class="on">최근 7일</button>
+        <button data-p="30">최근 30일</button>
+      </div>
+      <div class="card">
+        <div class="tiles">
+          <div class="tile"><div class="l">하루 평균 섭취</div><div class="v" id="sAvg">-</div><div class="s" id="sAvgS"></div></div>
+          <div class="tile"><div class="l">목표 지킨 날</div><div class="v" id="sKeep">-</div><div class="s" id="sKeepS"></div></div>
+          <div class="tile"><div class="l">누적 칼로리 차이</div><div class="v" id="sDiff">-</div><div class="s">목표 대비 합계</div></div>
+          <div class="tile"><div class="l">예상 체중 변화</div><div class="v" id="sWt">-</div><div class="s">7,700kcal ≈ 1kg 기준</div></div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>📈 일별 칼로리</h2>
+        <div id="chart"></div>
+        <p class="muted" style="margin-top:6px">점선은 하루 목표예요.</p>
+      </div>
+      <div class="card">
+        <h2>⚖️ 체중: 예상 vs 실제</h2>
+        <div id="wChart"></div>
+        <p class="muted" id="wChartNote" style="margin-top:6px"></p>
+      </div>
+      <div class="card">
+        <h2>🍺 음주 · 🌙 야식</h2>
+        <div class="tiles">
+          <div class="tile"><div class="l">술 마신 날</div><div class="v" id="aDays">-</div><div class="s" id="aKcal"></div></div>
+          <div class="tile"><div class="l">밤 9시 이후 식사</div><div class="v" id="lCnt">-</div><div class="s" id="lKcal"></div></div>
+        </div>
+        <p class="muted" id="alNote" style="margin-top:10px"></p>
+      </div>
+      <div class="card">
+        <h2>⚖️ 영양 균형 (칼로리 비율)</h2>
+        <div class="hbar" id="macroBar"></div>
+        <p class="muted" id="macroTxt"></p>
+      </div>
+      <div class="card">
+        <h2>🕐 끼니별 평균</h2>
+        <div id="slotList"></div>
+      </div>
+      <div class="card">
+        <h2>🏆 자주 먹은 음식</h2>
+        <div id="topFoods"></div>
+      </div>
+      <div class="card">
+        <h2 id="reportHd">💬 기간 리포트</h2>
+        <p class="muted">기록을 바탕으로 Gemini가 잘한 점과 바꿀 점을 짚어 줘요.</p>
+        <div style="height:10px"></div>
+        <button class="btn primary" id="reportBtn">리포트 받기</button>
+        <div class="report" id="reportTxt"></div>
+      </div>
+    </section>
+
+    <!-- ===== 프로필 ===== -->
+    <section class="view" id="v-profile">
+      <div class="card">
+        <h2 id="profHd">👤 프로필</h2>
+        <div class="grid2">
+          <label class="f"><span>탭에 보일 이름</span><input id="pLabel" placeholder="찍찍이"></label>
+          <label class="f"><span>부르는 말</span><input id="pCall" placeholder="찍찍아"></label>
+          <label class="f"><span>잔소리하는 사람</span><input id="pCoach" placeholder="아내"></label>
+          <label class="f"><span>성별</span><select id="pSex"><option value="M">남성</option><option value="F">여성</option></select></label>
+          <label class="f"><span>나이</span><input type="number" id="pAge" inputmode="numeric" placeholder="예: 40"></label>
+          <label class="f"><span>키 (cm)</span><input type="number" id="pHeight" inputmode="decimal" placeholder="예: 175"></label>
+          <label class="f"><span>현재 체중 (kg)</span><input type="number" id="pWeight" inputmode="decimal" step="0.1"></label>
+          <label class="f"><span>목표 체중 (kg)</span><input type="number" id="pTarget" inputmode="decimal" step="0.1"></label>
+        </div>
+        <label class="f"><span>평소 활동 수준</span>
+          <select id="pAct">
+            <option value="1.2">거의 앉아서 생활</option>
+            <option value="1.375">가벼운 활동 (주 1~3회)</option>
+            <option value="1.55">보통 (주 3~5회 운동)</option>
+            <option value="1.725">활발 (거의 매일 운동)</option>
+          </select>
+        </label>
+        <h2 style="margin-top:6px">📊 인바디</h2>
+        <div class="grid2">
+          <label class="f"><span>골격근량 (kg)</span><input type="number" id="pMuscle" inputmode="decimal" step="0.1"></label>
+          <label class="f"><span>체지방률 (%)</span><input type="number" id="pFat" inputmode="decimal" step="0.1"></label>
+        </div>
+        <label class="f"><span>알레르기 / 기피 음식 (쉼표로 구분)</span><input id="pAvoid" placeholder="예: 새우, 오이"></label>
+
+        <h2 style="margin-top:6px">🍱 끼니 배분 (%)</h2>
+        <div class="presets" id="presets">
+          <button data-s="25,35,30,10">기본</button>
+          <button data-s="0,45,40,15">아침 거름</button>
+          <button data-s="20,30,30,20">야식 포함</button>
+          <button data-s="0,50,50,0">하루 두 끼</button>
+        </div>
+        <div class="grid4">
+          <label class="f"><span>아침</span><input type="number" id="sh0" inputmode="numeric"></label>
+          <label class="f"><span>점심</span><input type="number" id="sh1" inputmode="numeric"></label>
+          <label class="f"><span>저녁</span><input type="number" id="sh2" inputmode="numeric"></label>
+          <label class="f"><span>간식·야식</span><input type="number" id="sh3" inputmode="numeric"></label>
+        </div>
+        <p class="muted" id="shSum" style="margin:-4px 0 12px"></p>
+        <button class="btn primary" id="saveProfile">저장하기</button>
+      </div>
+
+      <div class="card">
+        <h2>🧮 이렇게 계산해요</h2>
+        <div class="calc" id="calcBox"></div>
+        <p class="muted" style="margin-top:10px">체지방률이 있으면 BMI 대신 제지방량(근육 등)으로 기초대사량을 계산해요 (Katch-McArdle 공식). 체중을 새로 기록하면 자동으로 다시 계산돼요.</p>
+      </div>
+
+      <div class="card">
+        <h2>🔑 Gemini 설정 (두 사람 공통)</h2>
+        <label class="f"><span>API 키</span><input type="password" id="apiKey" placeholder="AIza..." autocomplete="off"></label>
+        <label class="f"><span>모델</span><input id="apiModel" placeholder="gemini-3.8-flash"></label>
+        <div class="row">
+          <button class="btn primary" id="saveKey">저장</button>
+          <button class="btn ghost" id="testKey">연결 테스트</button>
+        </div>
+        <p class="muted" style="margin-top:10px">키는 이 폰에만 저장되고 Google 외에는 어디로도 보내지 않아요. 키가 없으면 <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a>에서 무료로 발급받을 수 있어요.</p>
+      </div>
+
+      <div class="card">
+        <h2>💾 백업 · 복원</h2>
+        <p class="muted" style="margin-bottom:10px">기록은 이 폰 안에만 저장돼요. 폰을 바꾸거나 앱 데이터를 지우기 전에 백업 파일을 받아 두세요. (API 키는 백업에 들어가지 않아요)</p>
+        <div class="row">
+          <button class="btn ghost" id="backupBtn">⬇️ 백업 받기</button>
+          <label class="btn ghost" for="restoreFile">⬆️ 복원하기</label>
+        </div>
+        <input type="file" id="restoreFile" accept="application/json,.json" class="hidden">
+      </div>
+    </section>
+  </main>
+
+  <nav>
+    <button data-v="scan" class="on"><span class="i">📷</span>촬영</button>
+    <button data-v="today"><span class="i">🍽️</span>오늘</button>
+    <button data-v="cal"><span class="i">📅</span>달력</button>
+    <button data-v="stats"><span class="i">📊</span>분석</button>
+    <button data-v="profile"><span class="i">👤</span>프로필</button>
+  </nav>
+</div>
+
+<!-- 앱 안 카메라 -->
+<div class="cam hidden" id="camView">
+  <video id="video" autoplay playsinline muted></video>
+  <div class="cam-guide"><div class="ring"></div><p>음식을 원 안에 맞춰주세요<br>숟가락을 옆에 두면 더 정확해요</p></div>
+  <div class="cam-ctl">
+    <button id="camClose" aria-label="닫기">✕</button>
+    <button id="shutter" aria-label="촬영"><span></span></button>
+    <label for="fileLib" aria-label="앨범">🖼️</label>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<canvas id="grab" class="hidden"></canvas>
+<script src="app.js"></script>
+<script>
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
+</script>
+</body>
+</html>

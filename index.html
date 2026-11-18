@@ -458,7 +458,7 @@
 
       <div class="card">
         <h2>🔑 Gemini 설정 (두 사람 공통)</h2>
-        <label class="f"><span>API 키</span><input type="password" id="apiKey" placeholder="AIza..." autocomplete="off"></label>
+        <label class="f"><span>API 키</span><input type="password" id="apiKey" placeholder="Google AI Studio에서 복사한 키" autocomplete="off"></label>
         <label class="f"><span>모델</span><input id="apiModel" placeholder="gemini-3.8-flash"></label>
         <div class="row">
           <button class="btn primary" id="saveKey">저장</button>
@@ -501,7 +501,7 @@
 </div>
 <div class="toast" id="toast"></div>
 <canvas id="grab" class="hidden"></canvas>
-<script src="app.js?v=6"></script>
+<script src="app.js?v=7"></script>
 <script>
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
 </script>

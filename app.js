@@ -248,7 +248,13 @@ $("shutter").onclick = () => {
   const f = e.target.files && e.target.files[0]; e.target.value = ""; stopCam();
   if (!f) return;
   const url = URL.createObjectURL(f); const img = new Image();
-  img.onload = () => { analyzeSource(img, img.naturalWidth, img.naturalHeight); URL.revokeObjectURL(url); };
+  // 앨범 사진이면 사진 파일 날짜를 기록 날짜 후보로 (최근 60일 안, 오늘 이전만)
+  let photoDate = null;
+  if (id === "fileLib" && f.lastModified) {
+    const d = new Date(f.lastModified), k = dKey(d);
+    if (k < todayKey() && Date.now() - f.lastModified < 60 * 864e5) photoDate = k;
+  }
+  img.onload = () => { analyzeSource(img, img.naturalWidth, img.naturalHeight, photoDate); URL.revokeObjectURL(url); };
   img.onerror = () => { URL.revokeObjectURL(url); toast("이미지를 열 수 없어요"); };
   img.src = url;
 }));
@@ -409,7 +415,7 @@ JSON만 출력:
 }`;
 }
 
-async function analyzeSource(src, w, h) {
+async function analyzeSource(src, w, h, photoDate) {
   if (!settings.apiKey) { showErr({ code: "nokey" }); toast(aiError({ code: "nokey" })); return; }
   hideErr();
   const big = resize(src, w, h, 1024), small = resize(src, w, h, 220);
@@ -417,11 +423,25 @@ async function analyzeSource(src, w, h) {
   const thumb = small.toDataURL("image/jpeg", .6);
   // Gemini에는 조금 더 작은 사진을 보내서 업로드·분석 시간을 줄임
   const send = resize(src, w, h, 768).toDataURL("image/jpeg", .8);
-  current = { preview, thumb, b64: send.split(",")[1], late: isLateNow(), mealType };
+  current = { preview, thumb, b64: send.split(",")[1], late: isLateNow(), mealType, date: todayKey(), share: 1, dayMeals: null };
+  if (photoDate) await setScanDate(photoDate, true);
   await runAnalysis();
 }
+// 기록할 날짜(지난 날짜 포함) 기준으로 계산
+function scanCalc() {
+  if (!current || !current.date || current.date === todayKey()) return calc(P(), todayMeals, actToday(), current ? current.mealType || mealType : mealType);
+  return calc(P(), current.dayMeals || [], activity[pid][current.date] || {}, current.mealType || mealType);
+}
+async function setScanDate(k, auto) {
+  if (!current) return;
+  const t = todayKey(); if (!k || k > t) k = t;
+  current.date = k;
+  current.dayMeals = k === t ? null : await loadRange(k, k);
+  current.late = k === t ? isLateNow() : false;
+  current.autoDate = !!auto;
+}
 async function runAnalysis(correction) {
-  const c = calc(), p = P();
+  const c = scanCalc(), p = P();
   $("busyImg").src = current.preview;
   $("busyTitle").textContent = correction ? "말씀하신 대로 다시 계산 중..." : "음식 부피 스캔 중...";
   showStage("busy");
@@ -449,6 +469,33 @@ async function runAnalysis(correction) {
   }
   hideErr(); current.r = r; showResult();
 }
+// 내가 먹은 비율 · 기록할 날짜
+function renderShareDate() {
+  const sh = current.share || 1;
+  document.querySelectorAll("#shareSeg button").forEach(b => b.classList.toggle("on", Math.abs(+b.dataset.s - sh) < 0.01));
+  $("shareNote").textContent = sh < 0.999 ? `사진 속 전체의 ${r0(sh * 100)}%만 내 몫으로 계산했어요` : "혼자 다 먹는 걸로 계산했어요";
+  $("sTotalL").textContent = sh < 0.999 ? `내 몫 (${r0(sh * 100)}%)` : "사진 속 총량";
+  const t = todayKey(); $("mealDate").max = t; $("mealDate").value = current.date || t;
+  const d = current.date || t, [, mm, dd] = d.split("-").map(Number);
+  $("dateNote").textContent = d === t ? "오늘 먹은 걸로 기록해요" : `${mm}월 ${dd}일에 먹은 걸로 기록해요` + (current.autoDate ? " (사진 날짜로 자동 선택)" : "") + ` · 그날 이미 ${fmt((current.dayMeals || []).reduce((a, m) => a + (m.eatenKcal || 0), 0))}kcal 먹었어요`;
+}
+function applyShare(v) {
+  if (!current || !current.r) return;
+  current.share = Math.max(0.05, Math.min(1, v));
+  const y = window.scrollY; showResult(); window.scrollTo(0, y);
+}
+document.querySelectorAll("#shareSeg button").forEach(b => b.onclick = () => applyShare(+b.dataset.s));
+$("shareGo").onclick = () => {
+  const v = num($("shareIn").value);
+  if (v == null || v <= 0 || v > 100) { toast("1~100 사이 숫자(%)로 넣어 주세요"); return; }
+  applyShare(v / 100); $("shareIn").value = "";
+};
+$("mealDate").addEventListener("change", async e => {
+  if (!current || !current.r) return;
+  await setScanDate(e.target.value, false);
+  const y = window.scrollY; showResult(); window.scrollTo(0, y);
+});
+
 // 잘못 읽은 음식 지우기 — 다시 묻지 않고 남은 음식으로 바로 다시 계산
 function removeFood(i) {
   const list = current.r.foods;
@@ -462,9 +509,10 @@ $("cancelBtn").onclick = () => { if (abortCtl) abortCtl.abort(); };
 
 /* ================= 결과 ================= */
 function showResult() {
-  const { r } = current; const c = calc(), p = P();
+  const { r } = current; const c = scanCalc(), p = P();
+  const sh = current.share || 1;   // 여럿이 먹었을 때 내 몫 비율
   const foods = r.foods.map(f => ({
-    name: String(f.name || "음식"), grams: +f.grams || 0, kcal: +f.kcal || 0, carbs: +f.carbs_g || 0, protein: +f.protein_g || 0, fat: +f.fat_g || 0,
+    name: String(f.name || "음식"), grams: (+f.grams || 0) * sh, kcal: (+f.kcal || 0) * sh, carbs: (+f.carbs_g || 0) * sh, protein: (+f.protein_g || 0) * sh, fat: (+f.fat_g || 0) * sh,
     conf: String(f.confidence || "medium"), alcohol: !!f.is_alcohol
   }));
   const tot = foods.reduce((s, f) => ({ kcal: s.kcal + f.kcal, grams: s.grams + f.grams, carbs: s.carbs + f.carbs, protein: s.protein + f.protein, fat: s.fat + f.fat }), { kcal: 0, grams: 0, carbs: 0, protein: 0, fat: 0 });
@@ -481,7 +529,7 @@ function showResult() {
   cut.classList.remove("on"); lbl.classList.remove("on"); shade.style.height = "0";
   $("okBadge").classList.toggle("hidden", !allOk);
   if (!allOk) {
-    const y = Math.max(12, Math.min(92, ratio * 100));
+    const y = Math.max(12, Math.min(92, ratio * sh * 100));
     cut.style.top = y + "%"; lbl.style.top = y + "%";
     lbl.textContent = ratio < 0.05 ? "✋ 오늘은 그만!" : `✂️ 딱 여기까지! (약 ${fmt(solidGrams * ratio)}g)`;
     setTimeout(() => { cut.classList.add("on"); lbl.classList.add("on"); shade.style.height = (100 - y) + "%"; }, 400);
@@ -539,6 +587,7 @@ function showResult() {
   const st = current.stat;
   $("aiStat").textContent = st ? `⏱️ ${st.sec.toFixed(1)}초 걸림 · 사용 모델: ${st.model}` + (st.tries > 1 ? ` (다른 모델 ${st.tries - 1}번 실패 후)` : "") : "";
   $("aiNote").textContent = r.reference_object ? `📏 기준 물체: ${r.reference_object}` : "📏 기준 물체 없이 그릇 크기로 추정했어요. 숟가락을 옆에 두면 더 정확해져요.";
+  renderShareDate();
   $("eatAllowed").textContent = allOk ? "알겠어, 잘 먹을게!" : "알겠어, 여기까지만!";
   $("eatAll").classList.toggle("hidden", allOk);
   $("fixText").value = "";
@@ -568,11 +617,12 @@ $("fixText").addEventListener("keydown", e => { if (e.key === "Enter") $("fixBtn
 /* ================= 저장 ================= */
 async function saveMeal(portion) {
   if (!current || !current.tot) return;
-  const { tot, foods, thumb, title, alcKcal, late } = current; const c = calc();
+  const { tot, foods, thumb, title, alcKcal, late } = current; const c = scanCalc();
+  const date = current.date && current.date <= todayKey() ? current.date : todayKey();
   const p = Math.max(0, Math.min(1, portion));
   const meal = {
     id: "m" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-    person: pid, date: todayKey(), ts: Date.now(), mealType: current.mealType || mealType, title, thumb, portion: p,
+    person: pid, date, ts: date === todayKey() ? Date.now() : new Date(date + "T12:00:00").getTime(), mealType: current.mealType || mealType, title, thumb, portion: p, share: current.share || 1,
     totalKcal: r0(tot.kcal), eatenKcal: r0(tot.kcal * p), alcoholKcal: r0(alcKcal * p), late: !!late,
     eaten: { carbs: r0(tot.carbs * p), protein: r0(tot.protein * p), fat: r0(tot.fat * p) },
     dailyTarget: r0(c.daily), tdee: r0(c.tdee),
@@ -580,7 +630,8 @@ async function saveMeal(portion) {
   };
   try {
     await idb.put(meal);
-    toast(p >= 0.99 && current.ratio < 0.95 ? "기록했어요. 다음 끼니는 가볍게! 😉" : "잘했어요! 식단 기록 저장 완료 💚");
+    const [, mm, dd] = date.split("-").map(Number);
+    toast(date !== todayKey() ? `${mm}월 ${dd}일 기록에 저장했어요 📅` : p >= 0.99 && current.ratio < 0.95 ? "기록했어요. 다음 끼니는 가볍게! 😉" : "잘했어요! 식단 기록 저장 완료 💚");
     current = null; showStage("start"); await loadToday(); renderAll();
   } catch (e) { toast("저장에 실패했어요. 다시 눌러 주세요"); }
 }
@@ -683,7 +734,11 @@ function drawCalendar(y, m, first, last) {
     const e = document.createElement("div");
     e.className = "cell " + (info ? level(info.kcal, info.target) : "") + (k === today ? " today" : "") + (k === calSel ? " sel" : "") + (k > today ? " future" : "");
     const dn = document.createElement("div"); dn.className = "d"; dn.textContent = d + (info?.alcohol ? "🍺" : info?.late ? "🌙" : ""); e.append(dn);
-    if (info && info.kcal) { const kc = document.createElement("div"); kc.className = "kc"; kc.textContent = fmt(info.kcal); e.append(kc); days++; sum += info.kcal; }
+    if (info && info.kcal) {
+      // 하루 적정 칼로리(키·체중·나이 기준 목표)를 넘으면 돼지, 안 넘으면 토끼
+      const an = document.createElement("div"); an.className = "an"; an.textContent = info.kcal > info.target ? "🐷" : "🐰"; e.append(an);
+      const kc = document.createElement("div"); kc.className = "kc"; kc.textContent = fmt(info.kcal); e.append(kc); days++; sum += info.kcal;
+    }
     e.onclick = () => { calSel = k; drawCalendar(y, m, first, last); renderDay(k); };
     g.append(e);
   }
@@ -696,7 +751,7 @@ function renderDay(k) {
   const wt = weights[pid][k];
   if (!info || !info.meals.length) { $("daySum").textContent = "이 날은 식사 기록이 없어요." + (wt ? ` · 체중 ${wt}kg` : ""); return; }
   const diff = info.kcal - info.target;
-  $("daySum").textContent = `총 ${fmt(info.kcal)} / 목표 ${fmt(info.target)} kcal (${diff > 0 ? "+" : ""}${fmt(diff)}) · 탄 ${r0(info.carbs)}g · 단 ${r0(info.protein)}g · 지 ${r0(info.fat)}g` + (info.alcohol ? ` · 🍺 ${fmt(info.alcohol)}kcal` : "") + (wt ? ` · 체중 ${wt}kg` : "");
+  $("daySum").textContent = (info.kcal > info.target ? "🐷 적정 칼로리 초과 · " : "🐰 적정 칼로리 이하 · ") + `총 ${fmt(info.kcal)} / 목표 ${fmt(info.target)} kcal (${diff > 0 ? "+" : ""}${fmt(diff)}) · 탄 ${r0(info.carbs)}g · 단 ${r0(info.protein)}g · 지 ${r0(info.fat)}g` + (info.alcohol ? ` · 🍺 ${fmt(info.alcohol)}kcal` : "") + (wt ? ` · 체중 ${wt}kg` : "");
   [...info.meals].sort((a, b) => (a.ts || 0) - (b.ts || 0)).forEach(m => box.append(mealRow(m, false)));
 }
 

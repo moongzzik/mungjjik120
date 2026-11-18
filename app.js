@@ -287,6 +287,7 @@ async function discoverModel() {
     return ok[0] || null;
   } catch (e) { return null; }
 }
+const THINK_LEVELS = ["minimal", "low", null];
 let aiTrace = [];   // 이번 요청에서 시도한 모델들 (속도 비교용)
 async function gemini(parts, opts = {}, _retry) {
   if (!settings.apiKey) throw { code: "nokey" };
@@ -313,8 +314,10 @@ async function geminiOnce(parts, { json = true, signal } = {}) {
     aiTrace.push(m);
     const cfg = json ? { responseMimeType: "application/json" } : {};
     // 생각(thinking)을 짧게 해서 답을 빨리 받기 — 지원 안 하는 모델이면 빼고 다시 시도
-    const think = !(settings.noThink || {})[m];
-    if (think) cfg.thinkingConfig = { thinkingLevel: "low" };
+    // minimal(가장 빠름) → low → 생각 설정 없음 순서로, 모델이 받아주는 가장 빠른 단계 사용
+    const lvIdx = (settings.thinkIdx || {})[m] || 0;
+    const think = THINK_LEVELS[lvIdx];
+    if (think) cfg.thinkingConfig = { thinkingLevel: think };
     // 한 모델이 너무 오래 걸리면(30초) 다음 모델로
     const ctl = new AbortController(); let timedOut = false;
     const timer = setTimeout(() => { timedOut = true; ctl.abort(); }, 30000);
@@ -335,7 +338,7 @@ async function geminiOnce(parts, { json = true, signal } = {}) {
     } finally { clearTimeout(timer); if (signal) signal.removeEventListener("abort", onAbort); }
     const msg = data.error?.message || "";
     if (think && res.status === 400 && /thinking/i.test(msg)) {
-      settings.noThink = { ...(settings.noThink || {}), [m]: true }; lsSet("settings", settings); i--; continue;
+      settings.thinkIdx = { ...(settings.thinkIdx || {}), [m]: lvIdx + 1 }; lsSet("settings", settings); aiTrace.pop(); i--; continue;
     }
     const modelProblem = res.status === 404 || (res.status === 400 && /model|not found|not supported|unsupported/i.test(msg) && !/api key/i.test(msg));
     if (modelProblem) { last = { code: "model", status: res.status, message: `${m}: ${msg}` }; continue; }
@@ -446,6 +449,15 @@ async function runAnalysis(correction) {
   }
   hideErr(); current.r = r; showResult();
 }
+// 잘못 읽은 음식 지우기 — 다시 묻지 않고 남은 음식으로 바로 다시 계산
+function removeFood(i) {
+  const list = current.r.foods;
+  if (list.length <= 1) { toast("마지막 음식은 지울 수 없어요. 아니면 '다시 찍기'를 눌러 주세요"); return; }
+  const [gone] = list.splice(i, 1);
+  if (current.r.title && gone && current.r.title === gone.name) current.r.title = "";
+  const y = window.scrollY; showResult(); window.scrollTo(0, y);
+  toast(`'${gone.name}' 지웠어요`);
+}
 $("cancelBtn").onclick = () => { if (abortCtl) abortCtl.abort(); };
 
 /* ================= 결과 ================= */
@@ -511,7 +523,7 @@ function showResult() {
   $("sProt").textContent = proteinLow ? "보충 필요" : "충분"; $("sProt").style.color = proteinLow ? "var(--amber)" : "var(--green-d)";
 
   const ul = $("foodList"); ul.innerHTML = "";
-  foods.forEach(f => {
+  foods.forEach((f, i) => {
     const li = document.createElement("li"), L = document.createElement("div");
     const n = document.createElement("div"); n.className = "nm"; n.textContent = (f.alcohol ? "🍺 " : "") + f.name;
     const lv = f.conf === "high" ? "h" : f.conf === "low" ? "l" : "m";
@@ -519,7 +531,10 @@ function showResult() {
     const s = document.createElement("div"); s.className = "sm"; s.textContent = `약 ${fmt(f.grams)}${f.alcohol ? "ml" : "g"} · 탄 ${r0(f.carbs)}g · 단 ${r0(f.protein)}g · 지 ${r0(f.fat)}g`;
     L.append(n, s);
     const k = document.createElement("div"); k.className = "kc"; k.textContent = fmt(f.kcal) + " kcal";
-    li.append(L, k); ul.append(li);
+    const x = document.createElement("button"); x.className = "x"; x.textContent = "✕"; x.setAttribute("aria-label", f.name + " 지우기");
+    x.onclick = () => removeFood(i);
+    const R = document.createElement("div"); R.className = "rt"; R.append(k, x);
+    li.append(L, R); ul.append(li);
   });
   const st = current.stat;
   $("aiStat").textContent = st ? `⏱️ ${st.sec.toFixed(1)}초 걸림 · 사용 모델: ${st.model}` + (st.tries > 1 ? ` (다른 모델 ${st.tries - 1}번 실패 후)` : "") : "";

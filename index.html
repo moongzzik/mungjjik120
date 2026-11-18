@@ -91,6 +91,9 @@
   .foods .nm{font-weight:500}
   .foods .sm{font-size:11.5px;color:var(--sub);margin-top:2px}
   .foods .kc{font-weight:700;white-space:nowrap}
+  .foods .rt{display:flex;align-items:center;gap:4px}
+  .foods .x{border:0;background:#f3f4f6;color:#6b7280;width:30px;height:30px;border-radius:50%;font-size:14px;cursor:pointer;flex:none}
+  .foods .x:active{background:var(--red-l);color:var(--red)}
   .conf{display:inline-block;font-size:10px;padding:1px 6px;border-radius:6px;margin-left:4px;vertical-align:middle}
   .conf.h{background:var(--green-l);color:#065f46}.conf.m{background:#fef3c7;color:#92400e}.conf.l{background:var(--red-l);color:#991b1b}
   /* Today */
@@ -503,7 +506,7 @@
 </div>
 <div class="toast" id="toast"></div>
 <canvas id="grab" class="hidden"></canvas>
-<script src="app.js?v=11"></script>
+<script src="app.js?v=12"></script>
 <script>
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
 </script>

@@ -286,7 +286,7 @@ async function gemini(parts, opts = {}, _retry) {
   if (!settings.apiKey) throw { code: "nokey" };
   try { return await geminiOnce(parts, opts); }
   catch (e) {
-    if (e && e.code === "busy" && !_retry) {
+    if (e && (e.code === "busy" || (e.code === "network" && navigator.onLine !== false)) && !_retry) {
       await new Promise((r, j) => { const t = setTimeout(r, 3000); opts.signal && opts.signal.addEventListener("abort", () => { clearTimeout(t); j(new DOMException("취소", "AbortError")); }); });
       return gemini(parts, opts, true);
     }
@@ -299,7 +299,7 @@ async function gemini(parts, opts = {}, _retry) {
 }
 async function geminiOnce(parts, { json = true, signal } = {}) {
   const models = [...new Set([settings.model || settings.workingModel || DEFAULT_MODEL, DEFAULT_MODEL, ...FALLBACK_MODELS])];
-  let last = { code: "model" }, busy = null;
+  let last = { code: "model" }, busy = null, net = null;
   for (const m of models) {
     let res;
     try {
@@ -308,7 +308,7 @@ async function geminiOnce(parts, { json = true, signal } = {}) {
         headers: { "Content-Type": "application/json", "x-goog-api-key": settings.apiKey },
         body: JSON.stringify({ contents: [{ role: "user", parts }], generationConfig: json ? { responseMimeType: "application/json" } : {} }),
       });
-    } catch (e) { if (e.name === "AbortError") throw e; throw { code: "network", message: `${m}: ${(e && e.message) || e}` }; }
+    } catch (e) { if (e.name === "AbortError") throw e; net = { code: "network", message: `${m}: ${(e && e.message) || e}` }; continue; }
     const data = await res.json().catch(() => ({}));
     const msg = data.error?.message || "";
     const modelProblem = res.status === 404 || (res.status === 400 && /model|not found|not supported|unsupported/i.test(msg) && !/api key/i.test(msg));
@@ -325,7 +325,7 @@ async function geminiOnce(parts, { json = true, signal } = {}) {
     if (settings.workingModel !== m) { settings.workingModel = m; lsSet("settings", settings); }
     return json ? parseJSON(text) : text;
   }
-  throw busy || last;
+  throw busy || net || last;
 }
 function aiError(e) {
   const c = e && e.code;

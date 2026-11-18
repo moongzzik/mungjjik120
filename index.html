@@ -226,6 +226,7 @@
           <div class="scan-text">
             <div class="cube">🧊</div>
             <h3 id="busyTitle">음식 부피 스캔 중...</h3>
+            <div id="busyTime" style="font-size:15px;font-weight:700;margin-top:4px">0초</div>
             <p>Gemini가 인바디 데이터와 대조해서 적정량을 계산하고 있어요</p>
           </div>
         </div>
@@ -262,6 +263,7 @@
           <h2>🔍 Gemini가 찾은 음식</h2>
           <ul class="foods" id="foodList"></ul>
           <p class="muted" id="aiNote" style="margin-top:8px"></p>
+          <p class="muted" id="aiStat" style="margin-top:4px"></p>
         </div>
 
         <div class="card">
@@ -501,7 +503,7 @@
 </div>
 <div class="toast" id="toast"></div>
 <canvas id="grab" class="hidden"></canvas>
-<script src="app.js?v=10"></script>
+<script src="app.js?v=11"></script>
 <script>
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
 </script>

@@ -298,19 +298,37 @@ async function gemini(parts, opts = {}, _retry) {
   }
 }
 async function geminiOnce(parts, { json = true, signal } = {}) {
-  const models = [...new Set([settings.model || settings.workingModel || DEFAULT_MODEL, DEFAULT_MODEL, ...FALLBACK_MODELS])];
+  // 마지막으로 잘 됐던 모델을 먼저 시도 (붐비는 모델에서 시간 낭비 줄이기)
+  const models = [...new Set([settings.workingModel, settings.model, DEFAULT_MODEL, ...FALLBACK_MODELS].filter(Boolean))];
   let last = { code: "model" }, busy = null, net = null;
-  for (const m of models) {
-    let res;
+  for (let i = 0; i < models.length; i++) {
+    const m = models[i];
+    const cfg = json ? { responseMimeType: "application/json" } : {};
+    // 생각(thinking)을 짧게 해서 답을 빨리 받기 — 지원 안 하는 모델이면 빼고 다시 시도
+    const think = !(settings.noThink || {})[m];
+    if (think) cfg.thinkingConfig = { thinkingLevel: "low" };
+    // 한 모델이 너무 오래 걸리면(30초) 다음 모델로
+    const ctl = new AbortController(); let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; ctl.abort(); }, 30000);
+    const onAbort = () => ctl.abort(); if (signal) { if (signal.aborted) ctl.abort(); else signal.addEventListener("abort", onAbort); }
+    let res, data;
     try {
       res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(m)}:generateContent`, {
-        method: "POST", signal,
+        method: "POST", signal: ctl.signal,
         headers: { "Content-Type": "application/json", "x-goog-api-key": settings.apiKey },
-        body: JSON.stringify({ contents: [{ role: "user", parts }], generationConfig: json ? { responseMimeType: "application/json" } : {} }),
+        body: JSON.stringify({ contents: [{ role: "user", parts }], generationConfig: cfg }),
       });
-    } catch (e) { if (e.name === "AbortError") throw e; net = { code: "network", message: `${m}: ${(e && e.message) || e}` }; continue; }
-    const data = await res.json().catch(() => ({}));
+      data = await res.json().catch(() => ({}));
+    } catch (e) {
+      if (signal && signal.aborted) throw e;
+      if (timedOut) { busy = { code: "busy", message: `${m}: 30초 안에 답이 없었어요` }; continue; }
+      if (e.name === "AbortError") throw e;
+      net = { code: "network", message: `${m}: ${(e && e.message) || e}` }; continue;
+    } finally { clearTimeout(timer); if (signal) signal.removeEventListener("abort", onAbort); }
     const msg = data.error?.message || "";
+    if (think && res.status === 400 && /thinking/i.test(msg)) {
+      settings.noThink = { ...(settings.noThink || {}), [m]: true }; lsSet("settings", settings); i--; continue;
+    }
     const modelProblem = res.status === 404 || (res.status === 400 && /model|not found|not supported|unsupported/i.test(msg) && !/api key/i.test(msg));
     if (modelProblem) { last = { code: "model", status: res.status, message: `${m}: ${msg}` }; continue; }
     // 서버가 붐빔(503 등) → 다음 모델로 넘어가기
@@ -386,7 +404,9 @@ async function analyzeSource(src, w, h) {
   const big = resize(src, w, h, 1024), small = resize(src, w, h, 220);
   const preview = big.toDataURL("image/jpeg", .85);
   const thumb = small.toDataURL("image/jpeg", .6);
-  current = { preview, thumb, b64: preview.split(",")[1], late: isLateNow(), mealType };
+  // Gemini에는 조금 더 작은 사진을 보내서 업로드·분석 시간을 줄임
+  const send = resize(src, w, h, 768).toDataURL("image/jpeg", .8);
+  current = { preview, thumb, b64: send.split(",")[1], late: isLateNow(), mealType };
   await runAnalysis();
 }
 async function runAnalysis(correction) {

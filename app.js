@@ -10,7 +10,7 @@ const DEFAULTS = {
   p2: { label: "아내", call: "자기야", coach: "찍찍이", sex: "F", age: "", height: "", weight: "", target: "", act: "1.375", muscle: "", fat: "", avoid: "", shares: { ...DEF_SHARES } },
 };
 const DEFAULT_MODEL = "gemini-3.8-flash";
-const FALLBACK_MODELS = ["gemini-flash-latest", "gemini-3.6-flash", "gemini-3.5-flash"];
+const FALLBACK_MODELS = ["gemini-flash-latest", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite"];
 
 /* ================= 유틸 ================= */
 const $ = id => document.getElementById(id);
@@ -259,11 +259,42 @@ function showStage(s) {
 /* ================= Gemini ================= */
 function parseJSON(t) {
   t = t.trim().replace(/^```(?:json)?\s*/i, "").replace(/```$/, "").trim();
-  try { return JSON.parse(t); } catch (e) { const a = t.indexOf("{"), b = t.lastIndexOf("}"); if (a >= 0 && b > a) return JSON.parse(t.slice(a, b + 1)); throw e; }
+  let v;
+  try { v = JSON.parse(t); }
+  catch (e) {
+    const a = t.indexOf("{"), b = t.lastIndexOf("}");
+    try { v = JSON.parse(t.slice(a, b + 1)); } catch (e2) { throw { code: "parse", message: "AI 답변 형식 오류: " + t.slice(0, 60) }; }
+  }
+  if (Array.isArray(v)) v = v.find(x => x && typeof x === "object") || {};
+  return v;
 }
-async function gemini(parts, { json = true, signal } = {}) {
+// 이 API 키로 실제 쓸 수 있는 모델 목록을 Google에 물어보고 가장 좋은 Flash 모델을 고름
+async function discoverModel() {
+  try {
+    const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=200", { headers: { "x-goog-api-key": settings.apiKey } });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const ok = (data.models || []).filter(m => (m.supportedGenerationMethods || []).includes("generateContent"))
+      .map(m => m.name.replace(/^models\//, ""))
+      .filter(n => /^gemini-[\d.]+-flash/.test(n) && !/image|tts|live|audio|embed|exp|preview|thinking/i.test(n));
+    const ver = n => parseFloat((n.match(/gemini-([\d.]+)/) || [0, 0])[1]);
+    ok.sort((a, b) => (/lite/.test(a) - /lite/.test(b)) || ver(b) - ver(a) || a.length - b.length);
+    return ok[0] || null;
+  } catch (e) { return null; }
+}
+async function gemini(parts, opts = {}, _retry) {
   if (!settings.apiKey) throw { code: "nokey" };
-  const models = [...new Set([settings.model || DEFAULT_MODEL, ...FALLBACK_MODELS])];
+  try { return await geminiOnce(parts, opts); }
+  catch (e) {
+    if (e && e.code === "model" && !_retry) {
+      const m = await discoverModel();
+      if (m) { settings.workingModel = m; settings.model = ""; lsSet("settings", settings); return gemini(parts, opts, true); }
+    }
+    throw e;
+  }
+}
+async function geminiOnce(parts, { json = true, signal } = {}) {
+  const models = [...new Set([settings.model || settings.workingModel || DEFAULT_MODEL, DEFAULT_MODEL, ...FALLBACK_MODELS])];
   let last = { code: "model" };
   for (const m of models) {
     let res;
@@ -275,14 +306,17 @@ async function gemini(parts, { json = true, signal } = {}) {
       });
     } catch (e) { if (e.name === "AbortError") throw e; throw { code: "network" }; }
     const data = await res.json().catch(() => ({}));
-    if (res.status === 404) { last = { code: "model", message: data.error?.message }; continue; }
+    const msg = data.error?.message || "";
+    const modelProblem = res.status === 404 || (res.status === 400 && /model|not found|not supported|unsupported/i.test(msg) && !/api key/i.test(msg));
+    if (modelProblem) { last = { code: "model", status: res.status, message: `${m}: ${msg}` }; continue; }
     if (!res.ok) {
-      const msg = data.error?.message || "";
-      throw { code: (res.status === 400 && /key/i.test(msg)) || res.status === 401 || res.status === 403 ? "badkey" : res.status === 429 ? "rate" : "http", message: msg };
+      const code = (res.status === 400 && /api key/i.test(msg)) || res.status === 401 || res.status === 403 ? "badkey" : res.status === 429 ? "rate" : "http";
+      if (code === "rate" && m !== models[models.length - 1] && /limit: 0|quota/i.test(msg)) { last = { code, status: 429, message: `${m}: ${msg}` }; continue; }
+      throw { code, status: res.status, message: `${m}: ${msg}` };
     }
     const text = (data.candidates?.[0]?.content?.parts || []).filter(p => !p.thought).map(p => p.text || "").join("");
-    if (!text) throw { code: "empty", message: data.promptFeedback?.blockReason || data.candidates?.[0]?.finishReason };
-    if (m !== settings.model) { settings.workingModel = m; lsSet("settings", settings); }
+    if (!text) throw { code: "empty", message: `${m}: ` + (data.promptFeedback?.blockReason || data.candidates?.[0]?.finishReason || "빈 답변") };
+    if (settings.workingModel !== m) { settings.workingModel = m; lsSet("settings", settings); }
     return json ? parseJSON(text) : text;
   }
   throw last;
@@ -293,9 +327,21 @@ function aiError(e) {
   if (c === "badkey") return "API 키가 맞지 않아요. 프로필 탭에서 확인해 주세요";
   if (c === "rate") return "무료 사용량을 잠시 초과했어요. 1분 뒤 다시 시도해 주세요";
   if (c === "network") return "인터넷 연결을 확인해 주세요";
-  if (c === "model") return "모델 이름을 찾을 수 없어요. 프로필 탭에서 모델 칸을 비워 보세요";
+  if (c === "model") return "쓸 수 있는 Gemini 모델을 찾지 못했어요. 프로필 탭 모델 칸에 gemini-flash-latest 를 넣어 보세요";
+  if (c === "empty") return "Gemini가 답을 주지 않았어요. 사진을 다시 찍어 주세요";
+  if (c === "parse") return "Gemini 답변을 읽지 못했어요. 한 번 더 시도해 주세요";
+  if (e instanceof Error) return "앱 오류: " + e.message;
   return "분석에 실패했어요. 다시 시도해 주세요";
 }
+function showErr(e) {
+  let box = $("errBox");
+  if (!box) { box = document.createElement("div"); box.id = "errBox"; box.className = "alert"; $("scanStart").before(box); }
+  const detail = e && (e.message || e.status) ? `\n\n[자세한 원인] ${e.status ? e.status + " · " : ""}${String(e.message || "").slice(0, 220)}` : "";
+  box.style.whiteSpace = "pre-wrap";
+  box.textContent = "⚠️ " + aiError(e) + detail;
+  box.classList.remove("hidden");
+}
+function hideErr() { const b = $("errBox"); if (b) b.classList.add("hidden"); }
 
 function analysisPrompt(c, p) {
   return `당신은 한국 가정식에 정통한 임상 영양사입니다. 첨부된 사진 속 음식을 분석하세요.
@@ -328,7 +374,8 @@ JSON만 출력:
 }
 
 async function analyzeSource(src, w, h) {
-  if (!settings.apiKey) { toast(aiError({ code: "nokey" })); return; }
+  if (!settings.apiKey) { showErr({ code: "nokey" }); toast(aiError({ code: "nokey" })); return; }
+  hideErr();
   const big = resize(src, w, h, 1024), small = resize(src, w, h, 220);
   const preview = big.toDataURL("image/jpeg", .85);
   const thumb = small.toDataURL("image/jpeg", .6);
@@ -350,13 +397,13 @@ async function runAnalysis(correction) {
   catch (e) {
     abortCtl = null;
     if (e && e.name === "AbortError") { showStage(current.r ? "result" : "start"); return; }
-    toast(aiError(e)); showStage(current.r ? "result" : "start"); return;
+    console.error(e); showStage(current.r ? "result" : "start"); showErr(e); toast(aiError(e)); return;
   }
   abortCtl = null;
   if (!r || r.is_food === false || !Array.isArray(r.foods) || !r.foods.length) {
     showStage("start"); toast("음식을 찾지 못했어요. 음식이 잘 보이게 다시 찍어 주세요"); current = null; return;
   }
-  current.r = r; showResult();
+  hideErr(); current.r = r; showResult();
 }
 $("cancelBtn").onclick = () => { if (abortCtl) abortCtl.abort(); };
 
@@ -514,8 +561,9 @@ $("saveKey").onclick = () => { settings.apiKey = $("apiKey").value.trim(); setti
 $("testKey").onclick = async () => {
   $("saveKey").click(); if (!settings.apiKey) return;
   $("testKey").disabled = true; $("testKey").textContent = "확인 중...";
-  try { const t = await gemini([{ text: "한 단어로만 답하세요: 연결" }], { json: false }); toast(`연결 성공! (${settings.workingModel || settings.model || DEFAULT_MODEL})`); }
-  catch (e) { toast(aiError(e)); }
+  $("keyErr").textContent = "";
+  try { await gemini([{ text: "한 단어로만 답하세요: 연결" }], { json: false }); const m = settings.workingModel || settings.model || DEFAULT_MODEL; toast(`연결 성공! (${m})`); $("keyErr").textContent = `✅ 연결 성공 · 사용 모델: ${m}`; }
+  catch (e) { toast(aiError(e)); $("keyErr").textContent = "⚠️ " + aiError(e) + (e && e.message ? "\n[자세한 원인] " + String(e.message).slice(0, 220) : ""); }
   finally { $("testKey").disabled = false; $("testKey").textContent = "연결 테스트"; }
 };
 

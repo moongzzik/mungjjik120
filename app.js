@@ -304,7 +304,7 @@ async function geminiOnce(parts, { json = true, signal } = {}) {
         headers: { "Content-Type": "application/json", "x-goog-api-key": settings.apiKey },
         body: JSON.stringify({ contents: [{ role: "user", parts }], generationConfig: json ? { responseMimeType: "application/json" } : {} }),
       });
-    } catch (e) { if (e.name === "AbortError") throw e; throw { code: "network" }; }
+    } catch (e) { if (e.name === "AbortError") throw e; throw { code: "network", message: `${m}: ${(e && e.message) || e}` }; }
     const data = await res.json().catch(() => ({}));
     const msg = data.error?.message || "";
     const modelProblem = res.status === 404 || (res.status === 400 && /model|not found|not supported|unsupported/i.test(msg) && !/api key/i.test(msg));
@@ -326,7 +326,7 @@ function aiError(e) {
   if (c === "nokey") return "Gemini API 키를 먼저 넣어 주세요 (프로필 탭)";
   if (c === "badkey") return "API 키가 맞지 않아요. 프로필 탭에서 확인해 주세요";
   if (c === "rate") return "무료 사용량을 잠시 초과했어요. 1분 뒤 다시 시도해 주세요";
-  if (c === "network") return "인터넷 연결을 확인해 주세요";
+  if (c === "network") return navigator.onLine === false ? "인터넷이 끊겨 있어요. 와이파이나 데이터를 켜 주세요" : "Google 서버에 연결하지 못했어요. 광고 차단 앱·VPN·비공개 DNS를 끄거나, 회사·학교 와이파이 대신 데이터로 해 보세요";
   if (c === "model") return "쓸 수 있는 Gemini 모델을 찾지 못했어요. 프로필 탭 모델 칸에 gemini-flash-latest 를 넣어 보세요";
   if (c === "empty") return "Gemini가 답을 주지 않았어요. 사진을 다시 찍어 주세요";
   if (c === "parse") return "Gemini 답변을 읽지 못했어요. 한 번 더 시도해 주세요";
@@ -557,11 +557,12 @@ $("saveProfile").onclick = () => {
 };
 document.querySelectorAll("#presets button").forEach(b => b.onclick = () => { b.dataset.s.split(",").forEach((v, i) => $("sh" + i).value = v); updShSum(); });
 [0, 1, 2, 3].forEach(i => $("sh" + i).addEventListener("input", updShSum));
-$("saveKey").onclick = () => { settings.apiKey = $("apiKey").value.trim(); settings.model = $("apiModel").value.trim(); lsSet("settings", settings); renderHeader(); toast(settings.apiKey ? "키를 저장했어요" : "키를 지웠어요"); };
+$("saveKey").onclick = () => { const rawKey = $("apiKey").value; settings.apiKey = rawKey.replace(/[^\x21-\x7E]/g, ""); if (settings.apiKey !== rawKey.trim()) $("apiKey").value = settings.apiKey; settings.model = $("apiModel").value.trim(); lsSet("settings", settings); renderHeader(); toast(settings.apiKey ? "키를 저장했어요" : "키를 지웠어요"); };
 $("testKey").onclick = async () => {
   $("saveKey").click(); if (!settings.apiKey) return;
   $("testKey").disabled = true; $("testKey").textContent = "확인 중...";
   $("keyErr").textContent = "";
+  if (!/^AIza[0-9A-Za-z_-]{30,}$/.test(settings.apiKey)) { $("keyErr").textContent = "⚠️ API 키 모양이 이상해요. AIza로 시작하는 키 전체를 다시 복사해 넣어 주세요"; $("testKey").disabled = false; $("testKey").textContent = "연결 테스트"; return; }
   try { await gemini([{ text: "한 단어로만 답하세요: 연결" }], { json: false }); const m = settings.workingModel || settings.model || DEFAULT_MODEL; toast(`연결 성공! (${m})`); $("keyErr").textContent = `✅ 연결 성공 · 사용 모델: ${m}`; }
   catch (e) { toast(aiError(e)); $("keyErr").textContent = "⚠️ " + aiError(e) + (e && e.message ? "\n[자세한 원인] " + String(e.message).slice(0, 220) : ""); }
   finally { $("testKey").disabled = false; $("testKey").textContent = "연결 테스트"; }

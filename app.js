@@ -286,6 +286,10 @@ async function gemini(parts, opts = {}, _retry) {
   if (!settings.apiKey) throw { code: "nokey" };
   try { return await geminiOnce(parts, opts); }
   catch (e) {
+    if (e && e.code === "busy" && !_retry) {
+      await new Promise((r, j) => { const t = setTimeout(r, 3000); opts.signal && opts.signal.addEventListener("abort", () => { clearTimeout(t); j(new DOMException("취소", "AbortError")); }); });
+      return gemini(parts, opts, true);
+    }
     if (e && e.code === "model" && !_retry) {
       const m = await discoverModel();
       if (m) { settings.workingModel = m; settings.model = ""; lsSet("settings", settings); return gemini(parts, opts, true); }
@@ -295,7 +299,7 @@ async function gemini(parts, opts = {}, _retry) {
 }
 async function geminiOnce(parts, { json = true, signal } = {}) {
   const models = [...new Set([settings.model || settings.workingModel || DEFAULT_MODEL, DEFAULT_MODEL, ...FALLBACK_MODELS])];
-  let last = { code: "model" };
+  let last = { code: "model" }, busy = null;
   for (const m of models) {
     let res;
     try {
@@ -309,6 +313,8 @@ async function geminiOnce(parts, { json = true, signal } = {}) {
     const msg = data.error?.message || "";
     const modelProblem = res.status === 404 || (res.status === 400 && /model|not found|not supported|unsupported/i.test(msg) && !/api key/i.test(msg));
     if (modelProblem) { last = { code: "model", status: res.status, message: `${m}: ${msg}` }; continue; }
+    // 서버가 붐빔(503 등) → 다음 모델로 넘어가기
+    if (res.status >= 500 || /high demand|overloaded|unavailable/i.test(msg)) { busy = { code: "busy", status: res.status, message: `${m}: ${msg}` }; continue; }
     if (!res.ok) {
       const code = (res.status === 400 && /api key/i.test(msg)) || res.status === 401 || res.status === 403 ? "badkey" : res.status === 429 ? "rate" : "http";
       if (code === "rate" && m !== models[models.length - 1] && /limit: 0|quota/i.test(msg)) { last = { code, status: 429, message: `${m}: ${msg}` }; continue; }
@@ -319,13 +325,14 @@ async function geminiOnce(parts, { json = true, signal } = {}) {
     if (settings.workingModel !== m) { settings.workingModel = m; lsSet("settings", settings); }
     return json ? parseJSON(text) : text;
   }
-  throw last;
+  throw busy || last;
 }
 function aiError(e) {
   const c = e && e.code;
   if (c === "nokey") return "Gemini API 키를 먼저 넣어 주세요 (프로필 탭)";
   if (c === "badkey") return "API 키가 맞지 않아요. 프로필 탭에서 확인해 주세요";
   if (c === "rate") return "무료 사용량을 잠시 초과했어요. 1분 뒤 다시 시도해 주세요";
+  if (c === "busy") return "지금 Gemini 서버가 붐벼요. 잠시 뒤 다시 시도해 주세요";
   if (c === "network") return navigator.onLine === false ? "인터넷이 끊겨 있어요. 와이파이나 데이터를 켜 주세요" : "Google 서버에 연결하지 못했어요. 광고 차단 앱·VPN·비공개 DNS를 끄거나, 회사·학교 와이파이 대신 데이터로 해 보세요";
   if (c === "model") return "쓸 수 있는 Gemini 모델을 찾지 못했어요. 프로필 탭 모델 칸에 gemini-flash-latest 를 넣어 보세요";
   if (c === "empty") return "Gemini가 답을 주지 않았어요. 사진을 다시 찍어 주세요";

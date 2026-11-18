@@ -6,8 +6,8 @@ const PIDS = ["p1", "p2"];
 const SLOTS = ["아침", "점심", "저녁", "간식"];
 const DEF_SHARES = { 아침: 25, 점심: 35, 저녁: 30, 간식: 10 };
 const DEFAULTS = {
-  p1: { label: "찍찍이", call: "찍찍아", coach: "아내", sex: "M", age: "", height: "", weight: 77, target: 75, act: "1.375", muscle: 34, fat: 21, avoid: "새우, 오이", shares: { ...DEF_SHARES } },
-  p2: { label: "아내", call: "자기야", coach: "찍찍이", sex: "F", age: "", height: "", weight: "", target: "", act: "1.375", muscle: "", fat: "", avoid: "", shares: { ...DEF_SHARES } },
+  p1: { label: "찍찍이", call: "찍찍아", coach: "뭉뭉이", sex: "M", age: "", height: "", weight: 77, target: 75, act: "1.375", muscle: 34, fat: 21, avoid: "새우, 오이", shares: { ...DEF_SHARES } },
+  p2: { label: "뭉뭉이", call: "자기야", coach: "찍찍이", sex: "F", age: "", height: "", weight: "", target: "", act: "1.375", muscle: "", fat: "", avoid: "", shares: { ...DEF_SHARES } },
 };
 const DEFAULT_MODEL = "gemini-3.8-flash";
 const FALLBACK_MODELS = ["gemini-flash-latest", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite"];
@@ -59,6 +59,11 @@ let todayMeals = [];                                  // 현재 사람의 오늘
 let mealType = autoMealType();
 let current = null, abortCtl = null, stream = null;
 PIDS.forEach(k => { weights[k] = weights[k] || {}; activity[k] = activity[k] || {}; });
+if (!ls("renamed1")) {
+  if (profiles.p2.label === "아내") profiles.p2.label = "뭉뭉이";
+  if (profiles.p1.coach === "아내") profiles.p1.coach = "뭉뭉이";
+  lsSet("profiles", profiles); lsSet("renamed1", true);
+}
 
 const P = () => profiles[pid];
 const actToday = () => activity[pid][todayKey()] || {};
@@ -118,7 +123,7 @@ function calc(p = P(), eatenList = todayMeals, act = actToday(), slot = mealType
 function renderWho() {
   const box = $("who"); box.innerHTML = "";
   PIDS.forEach(k => {
-    const b = document.createElement("button"); b.textContent = (k === "p1" ? "🐭 " : "🌸 ") + (profiles[k].label || (k === "p1" ? "찍찍이" : "아내"));
+    const b = document.createElement("button"); b.textContent = (k === "p1" ? "🐭 " : "🌸 ") + (profiles[k].label || (k === "p1" ? "찍찍이" : "뭉뭉이"));
     b.className = k === pid ? "on" : ""; b.onclick = () => switchPerson(k); box.append(b);
   });
 }

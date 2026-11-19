@@ -455,12 +455,24 @@ async function setScanDate(k, auto) {
   current.late = k === t ? isLateNow() : false;
   current.autoDate = !!auto;
 }
+// 사진 없이 글로 적은 음식 계산
+async function analyzeText(foodText) {
+  if (!settings.apiKey) { showErr({ code: "nokey" }); toast(aiError({ code: "nokey" })); return; }
+  hideErr();
+  current = { preview: null, thumb: null, b64: null, textInput: foodText, late: isLateNow(), mealType, date: todayKey(), share: 1, dayMeals: null };
+  await runAnalysis();
+}
 async function runAnalysis(correction) {
   const c = scanCalc(), p = P();
-  $("busyImg").src = current.preview;
-  $("busyTitle").textContent = correction ? "말씀하신 대로 다시 계산 중..." : "음식 부피 스캔 중...";
+  const noPhoto = !current.b64;
+  $("busyImg").src = current.preview || ""; $("busyImg").classList.toggle("hidden", noPhoto);
+  $("busyImg").closest(".scan-wrap").classList.toggle("noimg", noPhoto);
+  $("busyTitle").textContent = correction ? "말씀하신 대로 다시 계산 중..." : noPhoto ? "적어 준 음식 계산 중..." : "음식 부피 스캔 중...";
   showStage("busy");
   let text = analysisPrompt(c, p);
+  if (noPhoto) {
+    text += `\n\n[중요: 사진은 없습니다]\n사용자가 글로 적은 음식과 양만 보고 추정하세요. 양이 적혀 있지 않으면 한국 식당·가정의 보통 1인분 기준으로 잡으세요. "반 공기", "2조각", "500cc", "한 캔" 같은 표현을 정확히 반영하세요. reference_object는 null로 하세요.\n[사용자가 적은 음식]\n"${current.textInput}"`;
+  }
   if (correction && current.r) {
     text += `\n\n[이전 분석 결과]\n${JSON.stringify(current.r)}\n\n[사용자 정정 — 최우선으로 반영]\n"${correction}"\n정정 내용을 반영해 음식 종류·양·칼로리를 다시 계산하고, 같은 JSON 형식으로만 출력하세요.`;
   }
@@ -469,7 +481,8 @@ async function runAnalysis(correction) {
   $("busyTime").textContent = "0초";
   const tick = setInterval(() => { $("busyTime").textContent = Math.floor((Date.now() - t0) / 1000) + "초"; }, 1000);
   let r;
-  try { r = await gemini([{ text }, { inline_data: { mime_type: "image/jpeg", data: current.b64 } }], { signal: abortCtl.signal }); }
+  const parts = noPhoto ? [{ text }] : [{ text }, { inline_data: { mime_type: "image/jpeg", data: current.b64 } }];
+  try { r = await gemini(parts, { signal: abortCtl.signal }); }
   catch (e) {
     clearInterval(tick); abortCtl = null;
     if (e && e.name === "AbortError") { showStage(current.r ? "result" : "start"); return; }
@@ -480,7 +493,9 @@ async function runAnalysis(correction) {
   clearInterval(tick); abortCtl = null;
   current.stat = { sec: (Date.now() - t0) / 1000, model: aiTrace[aiTrace.length - 1], tries: aiTrace.length };
   if (!r || r.is_food === false || !Array.isArray(r.foods) || !r.foods.length) {
-    showStage("start"); toast("음식을 찾지 못했어요. 음식이 잘 보이게 다시 찍어 주세요"); current = null; return;
+    showStage(current.r ? "result" : "start");
+    toast(noPhoto ? "어떤 음식인지 알아듣지 못했어요. 음식 이름과 양을 다시 적어 주세요" : "음식을 찾지 못했어요. 음식이 잘 보이게 다시 찍어 주세요");
+    if (!current.r) current = null; return;
   }
   hideErr(); current.r = r; showResult();
 }
@@ -489,7 +504,7 @@ function renderShareDate() {
   const sh = current.share || 1;
   document.querySelectorAll("#shareSeg button").forEach(b => b.classList.toggle("on", Math.abs(+b.dataset.s - sh) < 0.01));
   $("shareNote").textContent = sh < 0.999 ? `사진 속 전체의 ${shareLabel(sh)}(${r0(sh * 100)}%)만 내 몫으로 계산했어요` : "혼자 다 먹는 걸로 계산했어요";
-  $("sTotalL").textContent = sh < 0.999 ? `내 몫 (${r0(sh * 100)}%)` : "사진 속 총량";
+  $("sTotalL").textContent = sh < 0.999 ? `내 몫 (${r0(sh * 100)}%)` : current.preview ? "사진 속 총량" : "적은 음식 총량";
   const t = todayKey(); $("mealDate").max = t; $("mealDate").value = current.date || t;
   const d = current.date || t, [, mm, dd] = d.split("-").map(Number);
   $("dateNote").textContent = d === t ? "오늘 먹은 걸로 기록해요" : `${mm}월 ${dd}일에 먹은 걸로 기록해요` + (current.autoDate ? " (사진 날짜로 자동 선택)" : "") + ` · 그날 이미 ${fmt((current.dayMeals || []).reduce((a, m) => a + (m.eatenKcal || 0), 0))}kcal 먹었어요`;
@@ -520,6 +535,12 @@ function removeFood(i) {
   const y = window.scrollY; showResult(); window.scrollTo(0, y);
   toast(`'${gone.name}' 지웠어요`);
 }
+$("txtGo").onclick = () => {
+  const t = $("txtFood").value.trim();
+  if (!t) { toast("먹은 음식을 적어 주세요 (예: 김치찌개 1인분, 공기밥 반 공기)"); $("txtFood").focus(); return; }
+  if (t.length > 300) { toast("300자 안으로 적어 주세요"); return; }
+  analyzeText(t);
+};
 $("cancelBtn").onclick = () => { if (abortCtl) abortCtl.abort(); };
 
 /* ================= 결과 ================= */
@@ -539,7 +560,7 @@ function showResult() {
   const addOn = r.add_on && r.add_on.name ? r.add_on : null;
   Object.assign(current, { foods, tot, ratio, alcKcal, title: String(r.title || foods[0].name) });
 
-  $("resImg").src = current.preview;
+  $("resImg").src = current.preview || ""; $("resImg").closest(".res-img").classList.toggle("hidden", !current.preview);
   const cut = $("cut"), lbl = $("cutLabel"), shade = $("shade");
   cut.classList.remove("on"); lbl.classList.remove("on"); shade.style.height = "0";
   $("okBadge").classList.toggle("hidden", !allOk);
@@ -567,7 +588,7 @@ function showResult() {
   else if (ratio < 0.05) { add("오늘 칼로리를 이미 다 채웠어. "); add("이번엔 참자!", true); add(" "); }
   else {
     add(actLow ? "오늘 운동량도 적은데, " : `${c.goal === "감량" ? "목표 체중까지 가려면" : "지금 체중 기준으로"} `);
-    add(`이 ${current.title}${josa(current.title, "은", "는")} `); add(`점선까지만(${r0(ratio * 100)}%)`, true); add(" 먹어야 해! ");
+    add(`이 ${current.title}${josa(current.title, "은", "는")} `); add(current.preview ? `점선까지만(${r0(ratio * 100)}%)` : `${r0(ratio * 100)}%만(약 ${fmt(c.allowed)}kcal)`, true); add(" 먹어야 해! ");
   }
   if (alcKcal) { add(`술만 ${fmt(alcKcal)}kcal`, true); add("이야. 안주는 단백질 위주로, 술은 반만! "); }
   if (showAdd) { add("대신 "); add(addOn.name, true); add(` 추가해서 먹어${addOn.reason ? " (" + addOn.reason + ")" : ""}. `); }
@@ -601,7 +622,7 @@ function showResult() {
   });
   const st = current.stat;
   $("aiStat").textContent = st ? `⏱️ ${st.sec.toFixed(1)}초 걸림 · 사용 모델: ${st.model}` + (st.tries > 1 ? ` (다른 모델 ${st.tries - 1}번 실패 후)` : "") : "";
-  $("aiNote").textContent = r.reference_object ? `📏 기준 물체: ${r.reference_object}` : "📏 기준 물체 없이 그릇 크기로 추정했어요. 숟가락을 옆에 두면 더 정확해져요.";
+  $("aiNote").textContent = !current.preview ? `📝 적어 준 내용으로 계산했어요: "${current.textInput}" (양이 없으면 보통 1인분 기준)` : r.reference_object ? `📏 기준 물체: ${r.reference_object}` : "📏 기준 물체 없이 그릇 크기로 추정했어요. 숟가락을 옆에 두면 더 정확해져요.";
   renderShareDate();
   $("eatAllowed").textContent = allOk ? "알겠어, 잘 먹을게!" : "알겠어, 여기까지만!";
   $("eatAll").classList.toggle("hidden", allOk);
@@ -614,20 +635,20 @@ $("eatAll").onclick = () => saveMeal(1);
 $("fixBtn").onclick = () => { const t = $("fixText").value.trim(); if (!t) { toast("고칠 내용을 적어 주세요"); $("fixText").focus(); return; } runAnalysis(t); };
 $("fixText").addEventListener("keydown", e => { if (e.key === "Enter") $("fixBtn").click(); });
 
-// 음성 입력 (지원하는 브라우저에서만)
-(() => {
+// 음성 입력 (지원하는 브라우저에서만) — 정정 칸과 글 입력 칸 둘 다
+[["micBtn", "fixText"], ["txtMic", "txtFood"]].forEach(([btnId, boxId]) => {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition; if (!SR) return;
-  const btn = $("micBtn"); btn.classList.remove("hidden");
+  const btn = $(btnId); btn.classList.remove("hidden");
   let rec = null;
   btn.onclick = () => {
     if (rec) { rec.stop(); return; }
     rec = new SR(); rec.lang = "ko-KR"; rec.interimResults = true;
-    rec.onresult = e => { $("fixText").value = Array.from(e.results).map(x => x[0].transcript).join(""); };
+    rec.onresult = e => { $(boxId).value = Array.from(e.results).map(x => x[0].transcript).join(""); };
     rec.onend = () => { rec = null; btn.classList.remove("on"); };
     rec.onerror = () => { toast("음성을 듣지 못했어요. 키보드의 마이크를 써 보세요"); };
     btn.classList.add("on"); try { rec.start(); } catch (e) { rec = null; btn.classList.remove("on"); }
   };
-})();
+});
 
 /* ================= 저장 ================= */
 async function saveMeal(portion) {
@@ -647,6 +668,7 @@ async function saveMeal(portion) {
     await idb.put(meal);
     const [, mm, dd] = date.split("-").map(Number);
     toast(date !== todayKey() ? `${mm}월 ${dd}일 기록에 저장했어요 📅` : p >= 0.99 && current.ratio < 0.95 ? "기록했어요. 다음 끼니는 가볍게! 😉" : "잘했어요! 식단 기록 저장 완료 💚");
+    if (current.textInput) $("txtFood").value = "";
     current = null; showStage("start"); await loadToday(); renderAll();
   } catch (e) { toast("저장에 실패했어요. 다시 눌러 주세요"); }
 }

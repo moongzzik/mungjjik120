@@ -150,7 +150,7 @@ function renderHeader() {
 }
 function renderBudget() {
   const c = calc();
-  document.querySelectorAll("#mealSeg button").forEach(b => b.classList.toggle("on", b.dataset.m === mealType));
+  document.querySelectorAll("#mealSeg button, #txtMealSeg button").forEach(b => b.classList.toggle("on", b.dataset.m === mealType));
   $("bWho").textContent = P().label + ",";
   $("bMeal").textContent = mealType === "간식" ? "간식·야식" : mealType;
   $("bKcal").textContent = fmt(c.allowed);
@@ -242,7 +242,7 @@ document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
   ({ profile: renderProfile, today: renderToday, cal: renderCalendar, stats: renderStats }[b.dataset.v] || (() => { }))();
   window.scrollTo(0, 0);
 });
-document.querySelectorAll("#mealSeg button").forEach(b => b.onclick = () => { mealType = b.dataset.m; renderBudget(); });
+document.querySelectorAll("#mealSeg button, #txtMealSeg button").forEach(b => b.onclick = () => { mealType = b.dataset.m; renderBudget(); });
 
 /* ================= 카메라 ================= */
 $("openCam").onclick = async () => {
@@ -438,10 +438,11 @@ async function analyzeSource(src, w, h, photoDate) {
   const thumb = small.toDataURL("image/jpeg", .6);
   // Gemini에는 조금 더 작은 사진을 보내서 업로드·분석 시간을 줄임
   const send = resize(src, w, h, 768).toDataURL("image/jpeg", .8);
-  current = { preview, thumb, b64: send.split(",")[1], late: isLateNow(), mealType, date: todayKey(), share: 1, dayMeals: null };
+  current = { preview, thumb, b64: send.split(",")[1], late: lateFor(todayKey(), mealType), mealType, date: todayKey(), share: 1, dayMeals: null };
   if (photoDate) await setScanDate(photoDate, true);
   await runAnalysis();
 }
+function lateFor(date, slot) { return date === todayKey() && isLateNow() && (slot === "저녁" || slot === "간식"); }
 // 기록할 날짜(지난 날짜 포함) 기준으로 계산
 function scanCalc() {
   if (!current || !current.date || current.date === todayKey()) return calc(P(), todayMeals, actToday(), current ? current.mealType || mealType : mealType);
@@ -452,14 +453,14 @@ async function setScanDate(k, auto) {
   const t = todayKey(); if (!k || k > t) k = t;
   current.date = k;
   current.dayMeals = k === t ? null : await loadRange(k, k);
-  current.late = k === t ? isLateNow() : false;
+  current.late = lateFor(k, current.mealType || mealType);
   current.autoDate = !!auto;
 }
 // 사진 없이 글로 적은 음식 계산
 async function analyzeText(foodText) {
   if (!settings.apiKey) { showErr({ code: "nokey" }); toast(aiError({ code: "nokey" })); return; }
   hideErr();
-  current = { preview: null, thumb: null, b64: null, textInput: foodText, late: isLateNow(), mealType, date: todayKey(), share: 1, dayMeals: null };
+  current = { preview: null, thumb: null, b64: null, textInput: foodText, late: lateFor(todayKey(), mealType), mealType, date: todayKey(), share: 1, dayMeals: null };
   await runAnalysis();
 }
 async function runAnalysis(correction) {
@@ -506,6 +507,7 @@ function renderShareDate() {
   $("shareNote").textContent = sh < 0.999 ? `사진 속 전체의 ${shareLabel(sh)}(${r0(sh * 100)}%)만 내 몫으로 계산했어요` : "혼자 다 먹는 걸로 계산했어요";
   $("sTotalL").textContent = sh < 0.999 ? `내 몫 (${r0(sh * 100)}%)` : current.preview ? "사진 속 총량" : "적은 음식 총량";
   const t = todayKey(); $("mealDate").max = t; $("mealDate").value = current.date || t;
+  document.querySelectorAll("#resMealSeg button").forEach(b => b.classList.toggle("on", b.dataset.m === (current.mealType || mealType)));
   const d = current.date || t, [, mm, dd] = d.split("-").map(Number);
   $("dateNote").textContent = d === t ? "오늘 먹은 걸로 기록해요" : `${mm}월 ${dd}일에 먹은 걸로 기록해요` + (current.autoDate ? " (사진 날짜로 자동 선택)" : "") + ` · 그날 이미 ${fmt((current.dayMeals || []).reduce((a, m) => a + (m.eatenKcal || 0), 0))}kcal 먹었어요`;
 }
@@ -520,6 +522,13 @@ $("shareGo").onclick = () => {
   if (v == null || v <= 0 || v > 100) { toast("1~100 사이 숫자(%)로 넣어 주세요"); return; }
   applyShare(v / 100); $("shareIn").value = "";
 };
+// 결과 화면에서 끼니 바꾸기 — 그 끼니 기준으로 먹어도 되는 양 다시 계산
+document.querySelectorAll("#resMealSeg button").forEach(b => b.onclick = () => {
+  if (!current || !current.r) return;
+  current.mealType = b.dataset.m;
+  current.late = lateFor(current.date || todayKey(), current.mealType);
+  const y = window.scrollY; showResult(); window.scrollTo(0, y);
+});
 $("mealDate").addEventListener("change", async e => {
   if (!current || !current.r) return;
   await setScanDate(e.target.value, false);

@@ -176,6 +176,21 @@
   .cell .kc em{font-style:normal}
   .tag{display:inline-block;font-size:10.5px;border-radius:6px;padding:1px 6px;margin-left:4px;vertical-align:1px;font-weight:700}
   .tag.al{background:#fef3c7;color:#92400e}.tag.lt{background:#e0e7ff;color:#3730a3}
+  .ed{position:fixed;inset:0;background:#000;z-index:110;display:flex;flex-direction:column;color:#fff}
+  .ed-top{padding:calc(12px + env(safe-area-inset-top)) 16px 6px;display:flex;flex-direction:column;gap:2px}
+  .ed-top b{font-size:16px}.ed-top span{font-size:12.5px;color:#d1d5db}
+  .ed-stage{flex:1;position:relative;min-height:0;overflow:hidden;touch-action:none;user-select:none}
+  .ed-stage canvas{position:absolute}
+  .ed-box{position:absolute;border:2px solid #fff;box-shadow:0 0 0 9999px rgba(0,0,0,.55);cursor:move;
+    background-image:linear-gradient(rgba(255,255,255,.35) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.35) 1px,transparent 1px);background-size:33.33% 33.33%}
+  .ed-box i{position:absolute;width:28px;height:28px;border-radius:50%;background:#fff;border:3px solid var(--green);box-shadow:0 1px 4px rgba(0,0,0,.4)}
+  .ed-box i[data-h=nw]{left:-15px;top:-15px}.ed-box i[data-h=ne]{right:-15px;top:-15px}
+  .ed-box i[data-h=sw]{left:-15px;bottom:-15px}.ed-box i[data-h=se]{right:-15px;bottom:-15px}
+  .ed-tools{display:flex;gap:10px;justify-content:center;padding:10px 16px 4px}
+  .ed-tools button{border:0;border-radius:999px;background:rgba(255,255,255,.15);color:#fff;padding:9px 16px;font:500 14px 'Noto Sans KR';cursor:pointer}
+  .ed-ctl{display:flex;gap:10px;padding:10px 16px calc(14px + env(safe-area-inset-bottom))}
+  .ed-ctl button{flex:1;border:0;border-radius:14px;padding:14px;font:700 15px 'Noto Sans KR';cursor:pointer;background:rgba(255,255,255,.15);color:#fff}
+  .ed-ctl #edGo{flex:2;background:var(--green)}
   .cam{position:fixed;inset:0;background:#000;z-index:100;display:flex;flex-direction:column}
   .cam video{flex:1;width:100%;object-fit:cover;min-height:0}
   .cam-guide{position:absolute;inset:0 0 120px 0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none}
@@ -551,6 +566,13 @@
 </div>
 
 <!-- 앱 안 카메라 -->
+<!-- [추가] 사진 편집 (자르기·회전) -->
+<div class="ed hidden" id="edView">
+  <div class="ed-top"><b>✂️ 사진 편집</b><span>모서리를 끌어서 내 음식만 남겨 주세요</span></div>
+  <div class="ed-stage" id="edStage"><canvas id="edCanvas"></canvas><div class="ed-box" id="edBox"><i data-h="nw"></i><i data-h="ne"></i><i data-h="sw"></i><i data-h="se"></i></div></div>
+  <div class="ed-tools"><button id="edRot">↻ 돌리기</button><button id="edReset">↺ 처음대로</button></div>
+  <div class="ed-ctl"><button id="edCancel">취소</button><button id="edGo">✓ 이대로 분석</button></div>
+</div>
 <div class="cam hidden" id="camView">
   <video id="video" autoplay playsinline muted></video>
   <div class="cam-guide"><div class="ring"></div><p>음식을 원 안에 맞춰주세요<br>숟가락을 옆에 두면 더 정확해요</p></div>
@@ -562,7 +584,7 @@
 </div>
 <div class="toast" id="toast"></div>
 <canvas id="grab" class="hidden"></canvas>
-<script src="app.js?v=17"></script>
+<script src="app.js?v=18"></script>
 <script>
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
 </script>

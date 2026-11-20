@@ -270,7 +270,7 @@ $("camClose").onclick = stopCam;
 $("shutter").onclick = () => {
   const v = $("video"); if (!v.videoWidth) { toast("카메라가 아직 준비 중이에요"); return; }
   const cv = $("grab"); cv.width = v.videoWidth; cv.height = v.videoHeight; cv.getContext("2d").drawImage(v, 0, 0);
-  stopCam(); analyzeSource(cv, cv.width, cv.height);
+  stopCam(); openEditor(cv, cv.width, cv.height, null); // [수정] 바로 분석하지 않고 편집 화면 먼저
 };
 ["fileCam", "fileLib"].forEach(id => $(id).addEventListener("change", async e => {
   const f = e.target.files && e.target.files[0]; e.target.value = ""; stopCam();
@@ -282,10 +282,80 @@ $("shutter").onclick = () => {
     const d = new Date(f.lastModified), k = dKey(d);
     if (k < todayKey() && Date.now() - f.lastModified < 60 * 864e5) photoDate = k;
   }
-  img.onload = () => { analyzeSource(img, img.naturalWidth, img.naturalHeight, photoDate); URL.revokeObjectURL(url); };
+  img.onload = () => { openEditor(img, img.naturalWidth, img.naturalHeight, photoDate); URL.revokeObjectURL(url); }; // [수정] 편집 화면 먼저
   img.onerror = () => { URL.revokeObjectURL(url); toast("이미지를 열 수 없어요"); };
   img.src = url;
 }));
+/* ================= [추가] 사진 편집 (자르기·회전) ================= */
+let ed = null;
+function openEditor(src, w, h, photoDate) {
+  const base = resize(src, w, h, 2048);          // 메모리 아끼려고 긴 변 2048px까지만
+  ed = { base, rot: 0, photoDate, img: null, crop: null, view: null, drag: null };
+  $("edView").classList.remove("hidden");
+  ed.img = rotatedImage(); ed.crop = { x: 0, y: 0, w: ed.img.width, h: ed.img.height };
+  requestAnimationFrame(layoutEditor);
+}
+function closeEditor() { $("edView").classList.add("hidden"); ed = null; }
+function rotatedImage() {
+  const b = ed.base, r = ed.rot % 4, cv = document.createElement("canvas");
+  cv.width = r % 2 ? b.height : b.width; cv.height = r % 2 ? b.width : b.height;
+  const g = cv.getContext("2d"); g.translate(cv.width / 2, cv.height / 2); g.rotate(r * Math.PI / 2); g.drawImage(b, -b.width / 2, -b.height / 2);
+  return cv;
+}
+function layoutEditor() {
+  if (!ed) return;
+  const st = $("edStage"), cv = $("edCanvas"), im = ed.img, pad = 18;
+  const sw = st.clientWidth - pad * 2, sh = st.clientHeight - pad * 2;
+  const sc = Math.min(sw / im.width, sh / im.height);
+  const dw = Math.round(im.width * sc), dh = Math.round(im.height * sc);
+  cv.width = dw; cv.height = dh; cv.getContext("2d").drawImage(im, 0, 0, dw, dh);
+  const x = Math.round((st.clientWidth - dw) / 2), y = Math.round((st.clientHeight - dh) / 2);
+  cv.style.left = x + "px"; cv.style.top = y + "px";
+  ed.view = { x, y, s: sc };
+  drawCropBox();
+}
+function drawCropBox() {
+  const { view: v, crop: c } = ed, b = $("edBox");
+  b.style.left = v.x + c.x * v.s + "px"; b.style.top = v.y + c.y * v.s + "px";
+  b.style.width = c.w * v.s + "px"; b.style.height = c.h * v.s + "px";
+}
+$("edStage").addEventListener("pointerdown", e => {
+  if (!ed) return;
+  const h = e.target.dataset && e.target.dataset.h;
+  if (!h && e.target !== $("edBox")) return;
+  e.preventDefault(); $("edStage").setPointerCapture(e.pointerId);
+  ed.drag = { mode: h || "move", sx: e.clientX, sy: e.clientY, c0: { ...ed.crop } };
+});
+$("edStage").addEventListener("pointermove", e => {
+  if (!ed || !ed.drag) return;
+  const d = ed.drag, s = ed.view.s, W = ed.img.width, H = ed.img.height, min = 60 / s;
+  const dx = (e.clientX - d.sx) / s, dy = (e.clientY - d.sy) / s, c = { ...d.c0 };
+  if (d.mode === "move") {
+    c.x = Math.min(Math.max(0, d.c0.x + dx), W - c.w); c.y = Math.min(Math.max(0, d.c0.y + dy), H - c.h);
+  } else {
+    let x1 = d.c0.x, y1 = d.c0.y, x2 = d.c0.x + d.c0.w, y2 = d.c0.y + d.c0.h;
+    if (d.mode.includes("w")) x1 = Math.min(Math.max(0, x1 + dx), x2 - min);
+    if (d.mode.includes("e")) x2 = Math.max(Math.min(W, x2 + dx), x1 + min);
+    if (d.mode.includes("n")) y1 = Math.min(Math.max(0, y1 + dy), y2 - min);
+    if (d.mode.includes("s")) y2 = Math.max(Math.min(H, y2 + dy), y1 + min);
+    c.x = x1; c.y = y1; c.w = x2 - x1; c.h = y2 - y1;
+  }
+  ed.crop = c; drawCropBox();
+});
+["pointerup", "pointercancel"].forEach(t => $("edStage").addEventListener(t, () => { if (ed) ed.drag = null; }));
+window.addEventListener("resize", () => { if (ed) layoutEditor(); });
+$("edRot").onclick = () => { ed.rot = (ed.rot + 1) % 4; ed.img = rotatedImage(); ed.crop = { x: 0, y: 0, w: ed.img.width, h: ed.img.height }; layoutEditor(); };
+$("edReset").onclick = () => { ed.rot = 0; ed.img = rotatedImage(); ed.crop = { x: 0, y: 0, w: ed.img.width, h: ed.img.height }; layoutEditor(); };
+$("edCancel").onclick = closeEditor;
+$("edGo").onclick = () => {
+  if (!ed) return;
+  const c = ed.crop, cv = document.createElement("canvas");
+  cv.width = Math.max(1, Math.round(c.w)); cv.height = Math.max(1, Math.round(c.h));
+  cv.getContext("2d").drawImage(ed.img, c.x, c.y, c.w, c.h, 0, 0, cv.width, cv.height);
+  const pd = ed.photoDate; closeEditor();
+  analyzeSource(cv, cv.width, cv.height, pd);
+};
+
 function resize(src, w, h, max) {
   const s = Math.min(1, max / Math.max(w, h)); const cv = document.createElement("canvas");
   cv.width = Math.round(w * s); cv.height = Math.round(h * s); cv.getContext("2d").drawImage(src, 0, 0, cv.width, cv.height); return cv;

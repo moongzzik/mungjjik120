@@ -182,6 +182,9 @@ function mealRow(m, withDelete) {
   const shTxt = m.share && m.share < 0.999 ? `내 몫 ${shareLabel(m.share)} · ` : "";
   b.textContent = `${fmt(m.eatenKcal || 0)} kcal · ${shTxt}${m.portion >= 0.99 ? "전부" : "권장량(" + r0((m.portion || 0) * 100) + "%)"}` + (t && m.date === todayKey() ? ` · ${t}` : "");
   info.append(a, b); row.append(pic, info);
+  // [추가] 사진·제목을 누르면 크게 보기
+  pic.classList.add("tap"); info.classList.add("tap");
+  pic.onclick = info.onclick = () => openPhoto(m);
   if (withDelete) {
     // 실수로 지우지 않게 두 번 눌러야 삭제 (첫 번째: '삭제?'로 바뀜, 3초 지나면 원래대로)
     const del = document.createElement("button"); del.className = "del"; del.textContent = "✕"; del.setAttribute("aria-label", (m.title || "식사") + " 기록 삭제");
@@ -199,6 +202,29 @@ function mealRow(m, withDelete) {
 }
 const SHARE_NAMES = [[1, "혼자 다"], [0.75, "3/4"], [0.6667, "2/3"], [0.5, "1/2"], [0.3333, "1/3"], [0.25, "1/4"]];
 function shareLabel(v) { const f = SHARE_NAMES.find(([x]) => Math.abs(x - v) < 0.01); return f ? f[1] : r0(v * 100) + "%"; }
+/* ================= [추가] 기록 크게 보기 ================= */
+function openPhoto(m) {
+  const big = typeof m.photo === "string" && m.photo.startsWith("data:image/") ? m.photo : (typeof m.thumb === "string" && m.thumb.startsWith("data:image/") ? m.thumb : "");
+  $("pvImg").src = big; $("pvImg").classList.toggle("hidden", !big); $("pvNo").classList.toggle("hidden", !!big);
+  $("pvOld").classList.toggle("hidden", !big || big === m.photo);
+  const [, mm, dd] = String(m.date || "").split("-").map(Number);
+  $("pvTitle").textContent = `${mm}월 ${dd}일 ${m.mealType === "간식" ? "간식·야식" : m.mealType || ""} · ${m.title || "식사"}`;
+  const shTxt = m.share && m.share < 0.999 ? ` · 내 몫 ${shareLabel(m.share)}` : "";
+  $("pvSub").textContent = `먹은 양 ${fmt(m.eatenKcal || 0)} kcal${shTxt} · ${m.portion >= 0.99 ? "전부" : "권장량 " + r0((m.portion || 0) * 100) + "%"} · 탄 ${r0(m.eaten?.carbs || 0)}g · 단 ${r0(m.eaten?.protein || 0)}g · 지 ${r0(m.eaten?.fat || 0)}g`;
+  const ul = $("pvFoods"); ul.innerHTML = "";
+  (m.foods || []).forEach(f => { const li = document.createElement("li"); li.textContent = `${f.alcohol ? "🍺 " : ""}${f.name} · 약 ${fmt(f.grams || 0)}${f.alcohol ? "ml" : "g"} · ${fmt(f.kcal || 0)} kcal`; ul.append(li); });
+  $("pvView").classList.remove("hidden");
+  try { history.pushState({ pv: 1 }, ""); } catch (e) { }
+}
+function closePhoto(fromBack) {
+  if ($("pvView").classList.contains("hidden")) return;
+  $("pvView").classList.add("hidden"); $("pvImg").src = "";
+  if (!fromBack && history.state && history.state.pv) history.back();
+}
+$("pvClose").onclick = () => closePhoto(false);
+$("pvView").addEventListener("click", e => { if (e.target === $("pvView") || e.target === $("pvImg")) closePhoto(false); });
+window.addEventListener("popstate", () => closePhoto(true));   // 폰 뒤로 가기로 닫기
+
 function renderToday() {
   const c = calc();
   const pct = Math.min(1, c.eaten / c.daily);
@@ -521,7 +547,8 @@ async function analyzeSource(src, w, h, photoDate) {
   const thumb = small.toDataURL("image/jpeg", .6);
   // Gemini에는 조금 더 작은 사진을 보내서 업로드·분석 시간을 줄임
   const send = resize(src, w, h, 768).toDataURL("image/jpeg", .8);
-  current = { preview, thumb, b64: send.split(",")[1], late: lateFor(todayKey(), mealType), mealType, date: todayKey(), share: 1, dayMeals: null };
+  // [추가] 달력에서 크게 볼 사진(768px)도 기록에 같이 저장
+  current = { preview, thumb, photo: send, b64: send.split(",")[1], late: lateFor(todayKey(), mealType), mealType, date: todayKey(), share: 1, dayMeals: null };
   if (photoDate) await setScanDate(photoDate, true);
   await runAnalysis();
 }
@@ -745,12 +772,12 @@ $("fixText").addEventListener("keydown", e => { if (e.key === "Enter") $("fixBtn
 /* ================= 저장 ================= */
 async function saveMeal(portion) {
   if (!current || !current.tot) return;
-  const { tot, foods, thumb, title, alcKcal, late } = current; const c = scanCalc();
+  const { tot, foods, thumb, photo, title, alcKcal, late } = current; const c = scanCalc();
   const date = current.date && current.date <= todayKey() ? current.date : todayKey();
   const p = Math.max(0, Math.min(1, portion));
   const meal = {
     id: "m" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-    person: pid, date, ts: date === todayKey() ? Date.now() : new Date(date + "T12:00:00").getTime(), mealType: current.mealType || mealType, title, thumb, portion: p, share: current.share || 1,
+    person: pid, date, ts: date === todayKey() ? Date.now() : new Date(date + "T12:00:00").getTime(), mealType: current.mealType || mealType, title, thumb, photo: photo || null, portion: p, share: current.share || 1,
     totalKcal: r0(tot.kcal), eatenKcal: r0(tot.kcal * p), alcoholKcal: r0(alcKcal * p), late: !!late,
     eaten: { carbs: r0(tot.carbs * p), protein: r0(tot.protein * p), fat: r0(tot.fat * p) },
     dailyTarget: r0(c.daily), tdee: r0(c.tdee),

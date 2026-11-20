@@ -176,6 +176,17 @@
   .cell .kc em{font-style:normal}
   .tag{display:inline-block;font-size:10.5px;border-radius:6px;padding:1px 6px;margin-left:4px;vertical-align:1px;font-weight:700}
   .tag.al{background:#fef3c7;color:#92400e}.tag.lt{background:#e0e7ff;color:#3730a3}
+  .meal .tap{cursor:pointer}
+  .pv{position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:120;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:calc(56px + env(safe-area-inset-top)) 12px calc(16px + env(safe-area-inset-bottom));overflow-y:auto}
+  .pv #pvClose{position:fixed;top:calc(10px + env(safe-area-inset-top));right:12px;width:44px;height:44px;border-radius:50%;border:0;background:rgba(255,255,255,.18);color:#fff;font-size:20px;cursor:pointer;z-index:2}
+  .pv img{max-width:100%;max-height:62vh;border-radius:14px;object-fit:contain;flex:none}
+  .pv-no{color:#fff;text-align:center;font-size:40px;line-height:1.4;padding:30px 0}
+  .pv-no small{display:block;font-size:14px;margin-top:6px}
+  .pv-info{width:100%;max-width:456px;background:#fff;border-radius:16px;padding:14px 16px;margin-top:12px;flex:none}
+  .pv-info b{font-size:15px}
+  .pv-info p{font-size:12.5px;color:var(--sub);margin-top:4px;line-height:1.55}
+  .pv-info ul{list-style:none;margin-top:8px;font-size:13.5px;line-height:1.8}
+  .pv-info .pv-old{color:#92400e}
   .ed{position:fixed;inset:0;background:#000;z-index:110;display:flex;flex-direction:column;color:#fff}
   .ed-top{padding:calc(12px + env(safe-area-inset-top)) 16px 6px;display:flex;flex-direction:column;gap:2px}
   .ed-top b{font-size:16px}.ed-top span{font-size:12.5px;color:#d1d5db}
@@ -582,9 +593,21 @@
     <label for="fileLib" aria-label="앨범">🖼️</label>
   </div>
 </div>
+<!-- [추가] 기록 사진 크게 보기 -->
+<div class="pv hidden" id="pvView">
+  <button id="pvClose" aria-label="닫기">✕</button>
+  <img id="pvImg" alt="기록한 음식 사진">
+  <div class="pv-no hidden" id="pvNo">🍽️<small>사진 없이 글로 기록한 식사예요</small></div>
+  <div class="pv-info">
+    <b id="pvTitle"></b>
+    <p id="pvSub"></p>
+    <ul id="pvFoods"></ul>
+    <p class="pv-old hidden" id="pvOld">예전에 저장한 기록은 작은 사진만 있어서 흐릿하게 보여요. 앞으로 찍는 사진은 선명하게 저장돼요.</p>
+  </div>
+</div>
 <div class="toast" id="toast"></div>
 <canvas id="grab" class="hidden"></canvas>
-<script src="app.js?v=18"></script>
+<script src="app.js?v=19"></script>
 <script>
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
 </script>

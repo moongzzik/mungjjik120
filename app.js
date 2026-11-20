@@ -53,7 +53,7 @@ const idb = (() => {
 let pid = PIDS.includes(ls("pid")) ? ls("pid") : "p1";
 let profiles = (() => { const p = ls("profiles", {}); const o = {}; PIDS.forEach(k => { o[k] = { ...DEFAULTS[k], ...(p[k] || {}) }; o[k].shares = { ...DEF_SHARES, ...((p[k] || {}).shares || DEFAULTS[k].shares) }; }); return o; })();
 let weights = ls("weights", { p1: {}, p2: {} });     // {pid: {date: kg}}
-let activity = ls("activity", { p1: {}, p2: {} });   // {pid: {date: {steps, minutes}}}
+let activity = ls("activity", { p1: {}, p2: {} });   // {pid: {date: {steps, minutes, runKm, runMin}}}
 let settings = ls("settings", { apiKey: "", model: "" });
 let todayMeals = [];                                  // 현재 사람의 오늘 기록
 let mealType = autoMealType();
@@ -79,6 +79,12 @@ async function loadRange(from, to) {
 }
 
 /* ================= 칼로리 계산 ================= */
+function runBurn(w, km, min) {
+  km = num(km); min = num(min);
+  if (km && km > 0) return w * km;                 // 달리기 1km ≈ 체중(kg) kcal
+  if (min && min > 0) return 9.8 * 3.5 * w / 200 * min; // 시속 약 10km 달리기
+  return 0;
+}
 function shares(p) {
   const s = p.shares || DEF_SHARES; const tot = SLOTS.reduce((a, k) => a + (+s[k] || 0), 0) || 100;
   const o = {}; SLOTS.forEach(k => o[k] = (+s[k] || 0) / tot); return o;
@@ -93,8 +99,13 @@ function calc(p = P(), eatenList = todayMeals, act = actToday(), slot = mealType
   else { bmr = (male ? 22 : 20) * w; method = "체중 기준(간이)"; }
 
   const steps = num(act.steps), mins = num(act.minutes);
+  // [추가] 달리기 소모 칼로리: 거리가 있으면 체중×거리(km), 없으면 시간(분)×체중 기준(MET 9.8)
+  const run = runBurn(w, act.runKm, act.runMin);
+  // [추가] 걸음 수에 달리기 걸음이 들어 있을 수 있어 그만큼 빼고 계산 (1km ≈ 1,300보, 1분 ≈ 160보)
+  const runSteps = num(act.runKm) ? num(act.runKm) * 1300 : (num(act.runMin) || 0) * 160;
+  const walkSteps = steps != null ? Math.max(0, steps - runSteps) : null;
   let tdee, actNote;
-  if (steps != null || mins != null) { const k = (steps || 0) * 0.04 * (w / 70) + (mins || 0) * 6; tdee = bmr * 1.2 + k; actNote = `오늘 활동 +${fmt(k)}`; }
+  if (steps != null || mins != null || run > 0) { const k = (walkSteps || 0) * 0.04 * (w / 70) + (mins || 0) * 6 + run; tdee = bmr * 1.2 + k; actNote = `오늘 활동 +${fmt(k)}` + (run > 0 ? `, 달리기 ${fmt(run)} 포함` : ""); }
   else { tdee = bmr * parseFloat(p.act || 1.375); actNote = "평소 활동 수준"; }
 
   const tgt = num(p.target) || w;
@@ -116,7 +127,7 @@ function calc(p = P(), eatenList = todayMeals, act = actToday(), slot = mealType
 
   const proteinDay = w * 1.2;
   const proteinMeal = proteinDay * Math.max(0.1, sh[slot] || 0.1);
-  return { bmr, method, tdee, actNote, adj, goal, daily, eaten, remain, allowed, proteinDay, proteinMeal, w, steps, male };
+  return { bmr, method, tdee, actNote, adj, goal, daily, eaten, remain, allowed, proteinDay, proteinMeal, w, steps, male, run };
 }
 
 /* ================= 렌더 ================= */
@@ -143,6 +154,7 @@ function renderHeader() {
   const chip = (html) => { const s = document.createElement("span"); s.className = "chip"; s.innerHTML = html; $("hdrChips").append(s); };
   chip(`오늘 <b>${fmt(c.eaten)}</b> / ${fmt(c.daily)} kcal`);
   if (c.steps != null) chip(`걸음 <b>${fmt(c.steps)}보</b>${c.steps < 5000 ? " 😢" : ""}`);
+  if (c.run > 0) { const a = actToday(); chip(`🏃 <b>${a.runKm ? a.runKm + "km" : a.runMin + "분"}</b> −${fmt(c.run)}kcal`); }
   const lw = latestWeight(pid); if (lw) chip(`체중 <b>${lw.kg}kg</b>`);
   renderWho();
   $("keyAlert").classList.toggle("hidden", !!settings.apiKey);
@@ -202,6 +214,7 @@ function renderToday() {
   $("mP").textContent = `${r0(Pr)} / ${r0(pT)}g`; $("mPb").style.width = Math.min(100, Pr / pT * 100) + "%";
   $("mF").textContent = `${r0(F)} / ${r0(fT)}g`; $("mFb").style.width = Math.min(100, F / fT * 100) + "%";
   const a = actToday(); $("actSteps").value = a.steps ?? ""; $("actMin").value = a.minutes ?? "";
+  $("runKm").value = a.runKm ?? ""; $("runMin").value = a.runMin ?? ""; runPreview();
   const tw = weights[pid][todayKey()]; $("wInput").value = tw ?? "";
   const lw = latestWeight(pid);
   $("wNote").textContent = tw ? `오늘 ${tw}kg 기록했어요. 목표까지 ${Math.abs(tw - (num(P().target) || tw)).toFixed(1)}kg!`
@@ -689,10 +702,22 @@ async function deleteMeal(id) {
   } catch (e) { toast("삭제에 실패했어요"); }
 }
 $("saveAct").onclick = () => {
-  const s = num($("actSteps").value), m = num($("actMin").value); const a = {};
+  const s = num($("actSteps").value), m = num($("actMin").value), rk = num($("runKm").value), rm = num($("runMin").value); const a = {};
+  if (rk != null && (rk < 0 || rk > 100)) { toast("달린 거리는 0~100km로 넣어 주세요"); return; }
+  if (rm != null && (rm < 0 || rm > 600)) { toast("달린 시간은 0~600분으로 넣어 주세요"); return; }
   if (s != null) a.steps = s; if (m != null) a.minutes = m;
-  activity[pid][todayKey()] = a; lsSet("activity", activity); renderAll(); toast("오늘 활동량을 반영했어요");
+  if (rk) a.runKm = Math.round(rk * 100) / 100; if (rm) a.runMin = rm;
+  activity[pid][todayKey()] = a; lsSet("activity", activity); renderAll();
+  const run = runBurn(calc().w, a.runKm, a.runMin);
+  toast(run > 0 ? `🏃 달리기 약 ${fmt(run)}kcal 소모! 오늘 먹어도 되는 양이 늘었어요` : "오늘 활동량을 반영했어요");
 };
+// [추가] 달리기 입력하면 소모 칼로리 미리 보여주기
+function runPreview() {
+  const run = runBurn(calc().w, $("runKm").value, $("runMin").value);
+  const km = num($("runKm").value), mn = num($("runMin").value);
+  $("runNote").textContent = run > 0 ? `🔥 약 ${fmt(run)}kcal 소모` + (km && mn ? ` · 평균 ${(mn / km).toFixed(1)}분/km` : "") + " — '활동량 반영하기'를 눌러야 저장돼요" : "거리나 시간 중 하나만 적어도 돼요 (거리가 있으면 거리로 계산)";
+}
+["runKm", "runMin"].forEach(id => $(id).addEventListener("input", runPreview));
 function latestWeight(k) { const e = Object.entries(weights[k] || {}).sort((a, b) => a[0] < b[0] ? 1 : -1)[0]; return e ? { date: e[0], kg: e[1] } : null; }
 $("wSave").onclick = () => {
   const v = num($("wInput").value);
@@ -783,7 +808,8 @@ function drawCalendar(y, m, first, last) {
     const k = dKey(new Date(y, m, d)), info = calData[k];
     const e = document.createElement("div");
     e.className = "cell " + (info ? level(info.kcal, info.target) : "") + (k === today ? " today" : "") + (k === calSel ? " sel" : "") + (k > today ? " future" : "");
-    const dn = document.createElement("div"); dn.className = "d"; dn.textContent = d + (info?.alcohol ? "🍺" : info?.late ? "🌙" : ""); e.append(dn);
+    const ra = (activity[pid] || {})[k] || {};
+    const dn = document.createElement("div"); dn.className = "d"; dn.textContent = d + (ra.runKm || ra.runMin ? "🏃" : info?.alcohol ? "🍺" : info?.late ? "🌙" : ""); e.append(dn);
     if (info && info.kcal) {
       // 하루 적정 칼로리(키·체중·나이 기준 목표)를 넘으면 돼지, 안 넘으면 토끼
       const an = document.createElement("div"); an.className = "an"; an.textContent = info.kcal > info.target ? "🐷" : "🐰"; e.append(an);

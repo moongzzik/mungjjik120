@@ -368,10 +368,16 @@
         <h2>🏃 오늘 활동량</h2>
         <div class="grid2">
           <label class="f"><span>걸음 수</span><input type="number" id="actSteps" inputmode="numeric" placeholder="예: 2300"></label>
-          <label class="f"><span>운동 시간(분)</span><input type="number" id="actMin" inputmode="numeric" placeholder="예: 30"></label>
+          <label class="f"><span>다른 운동 시간(분)</span><input type="number" id="actMin" inputmode="numeric" placeholder="예: 30"></label>
         </div>
+        <h2 style="margin-top:4px">🏃 달리기</h2>
+        <div class="grid2">
+          <label class="f"><span>달린 거리 (km)</span><input type="number" id="runKm" inputmode="decimal" step="0.1" placeholder="예: 5"></label>
+          <label class="f"><span>달린 시간 (분)</span><input type="number" id="runMin" inputmode="numeric" placeholder="예: 30"></label>
+        </div>
+        <p class="muted" id="runNote" style="margin:-4px 0 10px"></p>
         <button class="btn ghost" id="saveAct">활동량 반영하기</button>
-        <p class="muted" style="margin-top:8px">비워 두면 평소 활동 수준으로 계산해요.</p>
+        <p class="muted" style="margin-top:8px">비워 두면 평소 활동 수준으로 계산해요. 걸음 수에 달리기 걸음이 들어 있어도 겹치지 않게 빼고 계산해요.</p>
       </div>
 
       <div class="card">
@@ -391,7 +397,7 @@
           <span><i style="background:#fde68a"></i>조금 초과</span>
           <span><i style="background:#fca5a5"></i>많이 초과</span>
           <span>🐰 적정 칼로리 이하 · 🐷 초과</span>
-          <span>🍺 음주 · 🌙 야식</span>
+          <span>🏃 달리기 · 🍺 음주 · 🌙 야식</span>
         </div>
         <div class="tiles" style="margin-top:12px">
           <div class="tile"><div class="l">이번 달 기록한 날</div><div class="v" id="mDays">-</div></div>
@@ -556,7 +562,7 @@
 </div>
 <div class="toast" id="toast"></div>
 <canvas id="grab" class="hidden"></canvas>
-<script src="app.js?v=16"></script>
+<script src="app.js?v=17"></script>
 <script>
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
 </script>

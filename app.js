@@ -198,7 +198,13 @@ function mealRow(m, withDelete) {
   const t = m.ts ? new Date(m.ts).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }) : "";
   const shTxt = m.share && m.share < 0.999 ? `내 몫 ${shareLabel(m.share)} · ` : "";
   b.textContent = `${fmt(m.eatenKcal || 0)} kcal · ${shTxt}${m.portion >= 0.99 ? "전부" : "권장량(" + r0((m.portion || 0) * 100) + "%)"}` + (t && m.date === todayKey() ? ` · ${t}` : "");
-  info.append(a, b); row.append(pic, info);
+  info.append(a, b);
+  if (m.memo) { const mm = document.createElement("div"); mm.className = "memo"; mm.textContent = "📝 " + m.memo; info.append(mm); }   // [추가] 메모 보이기
+  row.append(pic, info);
+  // [추가] 메모 버튼 — 크게 보기를 열고 메모 칸으로 바로 이동
+  const mb = document.createElement("button"); mb.className = "mbtn" + (m.memo ? " has" : ""); mb.textContent = "📝"; mb.setAttribute("aria-label", "메모");
+  mb.onclick = () => { openPhoto(m); setTimeout(() => { $("pvMemo").scrollIntoView({ block: "center" }); $("pvMemo").focus(); }, 80); };
+  row.append(mb);
   // [추가] 사진·제목을 누르면 크게 보기
   pic.classList.add("tap"); info.classList.add("tap");
   pic.onclick = info.onclick = () => openPhoto(m);
@@ -228,6 +234,7 @@ function openPhoto(m) {
 }
 function fillPhoto(m) {
   pvMeal = m;
+  $("pvMemo").value = m.memo || ""; $("pvMemoNote").textContent = m.memo ? "저장된 메모예요. 고친 뒤 저장을 누르세요." : "예: 회식, 배불러서 반 남김, 저녁 늦게 먹음";
   document.querySelectorAll("#pvShareSeg button").forEach(b => b.classList.toggle("on", Math.abs(+b.dataset.s - (m.share || 1)) < 0.01));
   const big = typeof m.photo === "string" && m.photo.startsWith("data:image/") ? m.photo : (typeof m.thumb === "string" && m.thumb.startsWith("data:image/") ? m.thumb : "");
   const pics = (m.photos || []).filter(x => typeof x === "string" && x.startsWith("data:image/"));
@@ -248,6 +255,18 @@ function fillPhoto(m) {
   (m.foods || []).forEach(f => { const li = document.createElement("li"); li.textContent = `${f.alcohol ? "🍺 " : ""}${f.name} · 약 ${fmt(f.grams || 0)}${f.alcohol ? "ml" : "g"} · ${fmt(f.kcal || 0)} kcal`; ul.append(li); });
 }
 // [추가] 저장한 기록의 '내가 먹은 비율'을 나중에 바꾸기 — 칼로리·탄단지·음식 양을 비율만큼 다시 계산
+// [추가] 기록마다 메모 저장
+async function saveMealMemo(m) {
+  const t = $("pvMemo").value.trim().slice(0, 300);
+  m.memo = t || undefined; if (!t) delete m.memo;
+  try {
+    await idb.put(m); await loadToday(); renderAll();
+    if ($("v-cal").classList.contains("on")) await renderCalendar();
+    $("pvMemoNote").textContent = t ? "✅ 메모를 저장했어요" : "메모를 지웠어요";
+    toast(t ? "📝 메모를 저장했어요" : "메모를 지웠어요");
+  } catch (e) { toast("메모를 저장하지 못했어요. 다시 눌러 주세요"); }
+}
+$("pvMemoSave").onclick = e => { e.stopPropagation(); if (pvMeal) saveMealMemo(pvMeal); };
 async function changeMealShare(m, v) {
   const old = m.share || 1; if (Math.abs(old - v) < 0.001) return;
   const k = v / old, sc = x => Math.round((+x || 0) * k);

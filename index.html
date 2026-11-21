@@ -177,6 +177,15 @@
   .tag{display:inline-block;font-size:10.5px;border-radius:6px;padding:1px 6px;margin-left:4px;vertical-align:1px;font-weight:700}
   .tag.al{background:#fef3c7;color:#92400e}.tag.lt{background:#e0e7ff;color:#3730a3}
   .meal .tap{cursor:pointer}
+  .meal .grid{width:54px;height:54px;border-radius:12px;overflow:hidden;flex:none;display:grid;gap:2px;background:#e5e7eb;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr}
+  .meal .grid.n2{grid-template-rows:1fr}
+  .meal .grid img{width:100%;height:100%;object-fit:cover;border-radius:0;display:block}
+  .meal .grid.n3 img:first-child{grid-row:span 2}
+  .res-strip{display:flex;gap:8px;margin-top:8px;overflow-x:auto}
+  .res-strip img{width:64px;height:64px;border-radius:10px;object-fit:cover;flex:none}
+  .pv-gal{display:flex;width:100%;max-width:456px;overflow-x:auto;scroll-snap-type:x mandatory;gap:0;flex:none;border-radius:14px}
+  .pv-gal img{flex:0 0 100%;width:100%;max-height:62vh;object-fit:contain;scroll-snap-align:center}
+  .pv-count{color:#e5e7eb;font-size:12.5px;margin-top:6px;flex:none}
   .pv{position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:120;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:calc(56px + env(safe-area-inset-top)) 12px calc(16px + env(safe-area-inset-bottom));overflow-y:auto}
   .pv #pvClose{position:fixed;top:calc(10px + env(safe-area-inset-top));right:12px;width:44px;height:44px;border-radius:50%;border:0;background:rgba(255,255,255,.18);color:#fff;font-size:20px;cursor:pointer;z-index:2}
   .pv img{max-width:100%;max-height:62vh;border-radius:14px;object-fit:contain;flex:none}
@@ -292,6 +301,7 @@
           <div class="ok-badge hidden" id="okBadge">👍 다 먹어도 OK!</div>
           <div class="addon hidden" id="addon"><div class="e" id="addonE">🍳</div><span id="addonT">+ 추천</span></div>
         </div>
+        <div class="res-strip hidden" id="resStrip"></div>
 
         <div class="bubble">
           <div class="hd" id="bubHd"></div>
@@ -598,6 +608,8 @@
 <div class="pv hidden" id="pvView">
   <button id="pvClose" aria-label="닫기">✕</button>
   <img id="pvImg" alt="기록한 음식 사진">
+  <div class="pv-gal hidden" id="pvGal"></div>
+  <div class="pv-count hidden" id="pvCount"></div>
   <div class="pv-no hidden" id="pvNo">🍽️<small>사진 없이 글로 기록한 식사예요</small></div>
   <div class="pv-info">
     <b id="pvTitle"></b>
@@ -613,7 +625,7 @@
 </div>
 <div class="toast" id="toast"></div>
 <canvas id="grab" class="hidden"></canvas>
-<script src="app.js?v=20"></script>
+<script src="app.js?v=21"></script>
 <script>
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
 </script>

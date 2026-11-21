@@ -171,7 +171,12 @@ function renderBudget() {
 function mealRow(m, withDelete) {
   const row = document.createElement("div"); row.className = "meal";
   let pic;
-  if (typeof m.thumb === "string" && m.thumb.startsWith("data:image/")) { pic = document.createElement("img"); pic.src = m.thumb; pic.alt = ""; }
+  const ths = (m.thumbs || []).filter(x => typeof x === "string" && x.startsWith("data:image/"));
+  if (ths.length > 1) {   // [추가] 여러 장 기록은 사진을 전부 작게 모아서 보여 줌
+    pic = document.createElement("div"); pic.className = "grid n" + Math.min(4, ths.length);
+    ths.slice(0, 4).forEach(t => { const im = document.createElement("img"); im.src = t; im.alt = ""; pic.append(im); });
+  }
+  else if (typeof m.thumb === "string" && m.thumb.startsWith("data:image/")) { pic = document.createElement("img"); pic.src = m.thumb; pic.alt = ""; }
   else { pic = document.createElement("div"); pic.className = "ph"; pic.textContent = "🍽️"; }
   const info = document.createElement("div"); info.className = "info";
   const a = document.createElement("div"); a.className = "a"; a.textContent = `${m.mealType === "간식" ? "간식·야식" : m.mealType} · ${m.title || "식사"}`;
@@ -213,7 +218,15 @@ function fillPhoto(m) {
   pvMeal = m;
   document.querySelectorAll("#pvShareSeg button").forEach(b => b.classList.toggle("on", Math.abs(+b.dataset.s - (m.share || 1)) < 0.01));
   const big = typeof m.photo === "string" && m.photo.startsWith("data:image/") ? m.photo : (typeof m.thumb === "string" && m.thumb.startsWith("data:image/") ? m.thumb : "");
-  $("pvImg").src = big; $("pvImg").classList.toggle("hidden", !big); $("pvNo").classList.toggle("hidden", !!big);
+  const pics = (m.photos || []).filter(x => typeof x === "string" && x.startsWith("data:image/"));
+  const gal = $("pvGal"); gal.innerHTML = "";
+  if (pics.length > 1) {   // [추가] 여러 장이면 옆으로 넘겨 보기
+    pics.forEach((u, i) => { const im = document.createElement("img"); im.src = u; im.alt = `${i + 1}번째 사진`; gal.append(im); });
+    gal.scrollLeft = 0; $("pvCount").textContent = `1 / ${pics.length} · 옆으로 넘겨 보세요`;
+    gal.onscroll = () => { const i = Math.round(gal.scrollLeft / gal.clientWidth); $("pvCount").textContent = `${i + 1} / ${pics.length} · 옆으로 넘겨 보세요`; };
+  }
+  gal.classList.toggle("hidden", pics.length < 2); $("pvCount").classList.toggle("hidden", pics.length < 2);
+  $("pvImg").src = pics.length > 1 ? "" : big; $("pvImg").classList.toggle("hidden", !big || pics.length > 1); $("pvNo").classList.toggle("hidden", !!big);
   $("pvOld").classList.toggle("hidden", !big || big === m.photo);
   const [, mm, dd] = String(m.date || "").split("-").map(Number);
   $("pvTitle").textContent = `${mm}월 ${dd}일 ${m.mealType === "간식" ? "간식·야식" : m.mealType || ""} · ${m.title || "식사"}`;
@@ -238,7 +251,7 @@ async function changeMealShare(m, v) {
 document.querySelectorAll("#pvShareSeg button").forEach(b => b.onclick = e => { e.stopPropagation(); if (pvMeal) changeMealShare(pvMeal, +b.dataset.s); });
 function closePhoto(fromBack) {
   if ($("pvView").classList.contains("hidden")) return;
-  $("pvView").classList.add("hidden"); $("pvImg").src = "";
+  $("pvView").classList.add("hidden"); $("pvImg").src = ""; $("pvGal").innerHTML = "";
   if (!fromBack && history.state && history.state.pv) history.back();
 }
 $("pvClose").onclick = () => closePhoto(false);
@@ -592,14 +605,17 @@ async function analyzeSources(list, photoDate) {
   if (!settings.apiKey) { showErr({ code: "nokey" }); toast(aiError({ code: "nokey" })); return; }
   hideErr();
   const src = list[0], w = src.width, h = src.height;
-  const more = list.slice(1).map(c => resize(c, c.width, c.height, 768).toDataURL("image/jpeg", .8).split(",")[1]);
+  // [수정] 여러 장이면 나머지 사진도 큰 사진·작은 사진으로 같이 보관 (오늘·달력에서 전부 보이게)
+  const moreUrls = list.slice(1).map(c => resize(c, c.width, c.height, 768).toDataURL("image/jpeg", .8));
+  const moreThumbs = list.slice(1).map(c => resize(c, c.width, c.height, 220).toDataURL("image/jpeg", .6));
+  const more = moreUrls.map(u => u.split(",")[1]);
   const big = resize(src, w, h, 1024), small = resize(src, w, h, 220);
   const preview = big.toDataURL("image/jpeg", .85);
   const thumb = small.toDataURL("image/jpeg", .6);
   // Gemini에는 조금 더 작은 사진을 보내서 업로드·분석 시간을 줄임
   const send = resize(src, w, h, 768).toDataURL("image/jpeg", .8);
   // [추가] 달력에서 크게 볼 사진(768px)도 기록에 같이 저장
-  current = { preview, thumb, photo: send, b64: send.split(",")[1], more, late: lateFor(todayKey(), mealType), mealType, date: todayKey(), share: 1, dayMeals: null };
+  current = { preview, thumb, photo: send, b64: send.split(",")[1], more, photos: [send, ...moreUrls], thumbs: [thumb, ...moreThumbs], late: lateFor(todayKey(), mealType), mealType, date: todayKey(), share: 1, dayMeals: null };
   if (photoDate) await setScanDate(photoDate, true);
   await runAnalysis();
 }
@@ -733,6 +749,9 @@ function showResult() {
   const addOn = r.add_on && r.add_on.name ? r.add_on : null;
   Object.assign(current, { foods, tot, ratio, alcKcal, title: String(r.title || foods[0].name) });
 
+  const strip = $("resStrip"); strip.innerHTML = "";   // [추가] 여러 장 분석이면 나머지 사진도 보여 줌
+  (current.thumbs || []).slice(1).forEach(t => { const im = document.createElement("img"); im.src = t; im.alt = ""; strip.append(im); });
+  strip.classList.toggle("hidden", !(current.thumbs && current.thumbs.length > 1));
   $("resImg").src = current.preview || ""; $("resImg").closest(".res-img").classList.toggle("hidden", !current.preview);
   const cut = $("cut"), lbl = $("cutLabel"), shade = $("shade");
   cut.classList.remove("on"); lbl.classList.remove("on"); shade.style.height = "0";
@@ -826,12 +845,12 @@ $("fixText").addEventListener("keydown", e => { if (e.key === "Enter") $("fixBtn
 /* ================= 저장 ================= */
 async function saveMeal(portion) {
   if (!current || !current.tot) return;
-  const { tot, foods, thumb, photo, title, alcKcal, late } = current; const c = scanCalc();
+  const { tot, foods, thumb, photo, photos, thumbs, title, alcKcal, late } = current; const c = scanCalc();
   const date = current.date && current.date <= todayKey() ? current.date : todayKey();
   const p = Math.max(0, Math.min(1, portion));
   const meal = {
     id: "m" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-    person: pid, date, ts: date === todayKey() ? Date.now() : new Date(date + "T12:00:00").getTime(), mealType: current.mealType || mealType, title, thumb, photo: photo || null, portion: p, share: current.share || 1,
+    person: pid, date, ts: date === todayKey() ? Date.now() : new Date(date + "T12:00:00").getTime(), mealType: current.mealType || mealType, title, thumb, photo: photo || null, photos: photos && photos.length > 1 ? photos : null, thumbs: thumbs && thumbs.length > 1 ? thumbs : null, portion: p, share: current.share || 1,
     totalKcal: r0(tot.kcal), eatenKcal: r0(tot.kcal * p), alcoholKcal: r0(alcKcal * p), late: !!late,
     eaten: { carbs: r0(tot.carbs * p), protein: r0(tot.protein * p), fat: r0(tot.fat * p) },
     dailyTarget: r0(c.daily), tdee: r0(c.tdee),

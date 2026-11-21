@@ -79,6 +79,19 @@ async function loadRange(from, to) {
 }
 
 /* ================= 칼로리 계산 ================= */
+// [추가] 오늘 운동으로 '더' 쓴 칼로리 — 평소 활동 수준에 이미 들어 있는 걸음은 빼고 셈
+const BASE_STEPS = { "1.2": 3000, "1.375": 5000, "1.55": 7000, "1.725": 9000 };
+function exBurn(w, actLevel, act) {
+  act = act || {};
+  const steps = num(act.steps), mins = num(act.minutes);
+  const run = runBurn(w, act.runKm, act.runMin);
+  // 걸음 수에 달리기 걸음이 들어 있을 수 있어 그만큼 빼고 계산 (1km ≈ 1,300보, 1분 ≈ 160보)
+  const runSteps = num(act.runKm) ? num(act.runKm) * 1300 : (num(act.runMin) || 0) * 160;
+  const base = BASE_STEPS[String(actLevel || "1.375")] ?? 5000;
+  const extraSteps = steps != null ? Math.max(0, steps - runSteps - base) : 0;
+  const walk = extraSteps * 0.04 * (w / 70), other = (mins || 0) * 6;
+  return { burn: walk + other + run, walk, other, run, base, extraSteps };
+}
 function runBurn(w, km, min) {
   km = num(km); min = num(min);
   if (km && km > 0) return w * km;                 // 달리기 1km ≈ 체중(kg) kcal
@@ -98,15 +111,12 @@ function calc(p = P(), eatenList = todayMeals, act = actToday(), slot = mealType
   else if (age && h) { bmr = 10 * w + 6.25 * h - 5 * age + (male ? 5 : -161); method = "키·나이 기준"; }
   else { bmr = (male ? 22 : 20) * w; method = "체중 기준(간이)"; }
 
-  const steps = num(act.steps), mins = num(act.minutes);
-  // [추가] 달리기 소모 칼로리: 거리가 있으면 체중×거리(km), 없으면 시간(분)×체중 기준(MET 9.8)
-  const run = runBurn(w, act.runKm, act.runMin);
-  // [추가] 걸음 수에 달리기 걸음이 들어 있을 수 있어 그만큼 빼고 계산 (1km ≈ 1,300보, 1분 ≈ 160보)
-  const runSteps = num(act.runKm) ? num(act.runKm) * 1300 : (num(act.runMin) || 0) * 160;
-  const walkSteps = steps != null ? Math.max(0, steps - runSteps) : null;
-  let tdee, actNote;
-  if (steps != null || mins != null || run > 0) { const k = (walkSteps || 0) * 0.04 * (w / 70) + (mins || 0) * 6 + run; tdee = bmr * 1.2 + k; actNote = `오늘 활동 +${fmt(k)}` + (run > 0 ? `, 달리기 ${fmt(run)} 포함` : ""); }
-  else { tdee = bmr * parseFloat(p.act || 1.375); actNote = "평소 활동 수준"; }
+  const steps = num(act.steps);
+  // [수정] 오늘 운동은 '하루 목표'를 올리지 않고, 먹은 칼로리에서 빼는 방식으로 바꿈
+  //  (예전: 운동을 넣으면 목표 칼로리 숫자가 커져서 "칼로리가 늘어난다"처럼 보였음)
+  const ex = exBurn(w, p.act, act);
+  const run = ex.run;
+  const tdee = bmr * parseFloat(p.act || 1.375), actNote = "평소 활동 수준";
 
   const tgt = num(p.target) || w;
   let adj = 0, goal = "유지";
@@ -114,7 +124,8 @@ function calc(p = P(), eatenList = todayMeals, act = actToday(), slot = mealType
   const daily = Math.max(male ? 1500 : 1200, tdee + adj);
 
   const eaten = eatenList.reduce((s, m) => s + (m.eatenKcal || 0), 0);
-  const remain = daily - eaten;
+  const burn = ex.burn, net = eaten - burn;       // [추가] 운동 소모만큼 먹은 양에서 뺌
+  const remain = daily - net;
   const sh = shares(p);
   const mains = ["아침", "점심", "저녁"].filter(k => sh[k] > 0);
   const lastMain = mains[mains.length - 1];
@@ -127,7 +138,7 @@ function calc(p = P(), eatenList = todayMeals, act = actToday(), slot = mealType
 
   const proteinDay = w * 1.2;
   const proteinMeal = proteinDay * Math.max(0.1, sh[slot] || 0.1);
-  return { bmr, method, tdee, actNote, adj, goal, daily, eaten, remain, allowed, proteinDay, proteinMeal, w, steps, male, run };
+  return { bmr, method, tdee, actNote, adj, goal, daily, eaten, burn, net, ex, remain, allowed, proteinDay, proteinMeal, w, steps, male, run };
 }
 
 /* ================= 렌더 ================= */
@@ -152,9 +163,10 @@ function renderHeader() {
   $("hdrSub").textContent = `${p.label} 맞춤 · 목표 ${p.target || "-"}kg (${c.goal})`;
   $("hdrChips").innerHTML = "";
   const chip = (html) => { const s = document.createElement("span"); s.className = "chip"; s.innerHTML = html; $("hdrChips").append(s); };
-  chip(`오늘 <b>${fmt(c.eaten)}</b> / ${fmt(c.daily)} kcal`);
+  chip(`오늘 <b>${fmt(c.net)}</b> / ${fmt(c.daily)} kcal`);
+  if (c.burn > 0) chip(`🔥 운동 <b>−${fmt(c.burn)}</b>kcal`);
   if (c.steps != null) chip(`걸음 <b>${fmt(c.steps)}보</b>${c.steps < 5000 ? " 😢" : ""}`);
-  if (c.run > 0) { const a = actToday(); chip(`🏃 <b>${a.runKm ? a.runKm + "km" : a.runMin + "분"}</b> −${fmt(c.run)}kcal`); }
+  if (c.run > 0) { const a = actToday(); chip(`🏃 <b>${a.runKm ? a.runKm + "km" : a.runMin + "분"}</b>`); }
   const lw = latestWeight(pid); if (lw) chip(`체중 <b>${lw.kg}kg</b>`);
   renderWho();
   $("keyAlert").classList.toggle("hidden", !!settings.apiKey);
@@ -260,12 +272,13 @@ window.addEventListener("popstate", () => closePhoto(true));   // 폰 뒤로 가
 
 function renderToday() {
   const c = calc();
-  const pct = Math.min(1, c.eaten / c.daily);
+  const pct = Math.min(1, Math.max(0, c.net) / c.daily);
   $("ring").style.strokeDashoffset = 289 * (1 - pct);
-  $("ring").setAttribute("stroke", c.eaten > c.daily ? "#ef4444" : (pct > .85 ? "#f59e0b" : "#10b981"));
-  $("ringPct").textContent = r0(c.eaten / c.daily * 100) + "%";
-  $("tEaten").textContent = fmt(c.eaten); $("tTarget").textContent = fmt(c.daily);
-  $("tMsg").textContent = !todayMeals.length ? "오늘 기록이 아직 없어요" : c.remain >= 0 ? `${fmt(c.remain)} kcal 더 먹을 수 있어요` : `${fmt(-c.remain)} kcal 초과했어요!`;
+  $("ring").setAttribute("stroke", c.net > c.daily ? "#ef4444" : (pct > .85 ? "#f59e0b" : "#10b981"));
+  $("ringPct").textContent = r0(Math.max(0, c.net) / c.daily * 100) + "%";
+  $("tEaten").textContent = fmt(c.net); $("tTarget").textContent = fmt(c.daily);
+  $("tMsg").textContent = (!todayMeals.length && !c.burn ? "오늘 기록이 아직 없어요" : c.remain >= 0 ? `${fmt(c.remain)} kcal 더 먹을 수 있어요` : `${fmt(-c.remain)} kcal 초과했어요!`) +
+    (c.burn > 0 ? ` (먹은 ${fmt(c.eaten)} − 운동 ${fmt(c.burn)})` : "");
   const sum = k => todayMeals.reduce((s, m) => s + (m.eaten?.[k] || 0), 0);
   const C = sum("carbs"), Pr = sum("protein"), F = sum("fat");
   const cT = c.daily * .5 / 4, pT = c.proteinDay, fT = c.daily * .25 / 9;
@@ -303,7 +316,8 @@ function renderCalc() {
     `목표 조정 (${c.goal}) <b>${c.adj > 0 ? "+" : ""}${fmt(c.adj)} kcal</b><br>` +
     `<span style="color:#059669;font-weight:700">하루 섭취 목표</span> <b style="color:#059669">${fmt(c.daily)} kcal</b><br>` +
     SLOTS.map(k => `${k === "간식" ? "간식·야식" : k} ${r0(sh[k] * 100)}%`).join(" · ") + ` <b></b><br>` +
-    `하루 단백질 목표 <b>${r0(c.proteinDay)} g</b>`;
+    `하루 단백질 목표 <b>${r0(c.proteinDay)} g</b>` +
+    (c.burn > 0 ? `<br>🔥 오늘 운동 소모 <b>−${fmt(c.burn)} kcal</b><br><span style="font-size:12px;color:#6b7280">걸음은 평소 ${fmt(c.ex.base)}보를 넘는 ${fmt(c.ex.extraSteps)}보만 셈 · 다른 운동 ${fmt(c.ex.other)} · 달리기 ${fmt(c.ex.run)} → 먹은 칼로리에서 빼요</span>` : "");
 }
 function renderAll() { renderHeader(); renderBudget(); renderToday(); }
 
@@ -879,7 +893,8 @@ $("saveAct").onclick = () => {
   if (rk) a.runKm = Math.round(rk * 100) / 100; if (rm) a.runMin = rm;
   activity[pid][todayKey()] = a; lsSet("activity", activity); renderAll();
   const run = runBurn(calc().w, a.runKm, a.runMin);
-  toast(run > 0 ? `🏃 달리기 약 ${fmt(run)}kcal 소모! 오늘 먹어도 되는 양이 늘었어요` : "오늘 활동량을 반영했어요");
+  const b = calc().burn;
+  toast(b > 0 ? `🔥 운동으로 약 ${fmt(b)}kcal 썼어요! 먹은 칼로리에서 뺐어요` : "반영했어요 (평소 활동 수준 안이라 따로 빼지 않았어요)");
 };
 // [추가] 달리기 입력하면 소모 칼로리 미리 보여주기
 function runPreview() {
@@ -952,7 +967,11 @@ function byDay(list) {
     d.alcohol += m.alcoholKcal || 0; if (m.late) { d.late++; d.lateKcal += m.eatenKcal || 0; }
     d.target = Math.max(d.target, m.dailyTarget || 0); d.tdee = Math.max(d.tdee, m.tdee || 0); d.meals.push(m);
   });
-  Object.values(map).forEach(d => { if (!d.target) d.target = c.daily; if (!d.tdee) d.tdee = c.tdee; });
+  Object.entries(map).forEach(([k, d]) => {
+    if (!d.target) d.target = c.daily; if (!d.tdee) d.tdee = c.tdee;
+    d.burn = exBurn(c.w, P().act, (activity[pid] || {})[k]).burn;   // [추가] 그날 운동 소모
+    d.net = d.kcal - d.burn;                                        // [추가] 먹은 칼로리 − 운동
+  });
   return map;
 }
 const level = (k, t) => !k ? "" : k / t < 0.9 ? "lv1" : k / t <= 1.05 ? "lv2" : k / t <= 1.2 ? "lv3" : "lv4";
@@ -977,13 +996,13 @@ function drawCalendar(y, m, first, last) {
   for (let d = 1; d <= last.getDate(); d++) {
     const k = dKey(new Date(y, m, d)), info = calData[k];
     const e = document.createElement("div");
-    e.className = "cell " + (info ? level(info.kcal, info.target) : "") + (k === today ? " today" : "") + (k === calSel ? " sel" : "") + (k > today ? " future" : "");
+    e.className = "cell " + (info ? level(Math.max(1, info.net), info.target) : "") + (k === today ? " today" : "") + (k === calSel ? " sel" : "") + (k > today ? " future" : "");
     const ra = (activity[pid] || {})[k] || {};
     const dn = document.createElement("div"); dn.className = "d"; dn.textContent = d + (ra.runKm || ra.runMin ? "🏃" : info?.alcohol ? "🍺" : info?.late ? "🌙" : ""); e.append(dn);
     if (info && info.kcal) {
       // 하루 적정 칼로리(키·체중·나이 기준 목표)를 넘으면 돼지, 안 넘으면 토끼
-      const an = document.createElement("div"); an.className = "an"; an.textContent = info.kcal > info.target ? "🐷" : "🐰"; e.append(an);
-      const kc = document.createElement("div"); kc.className = "kc"; kc.textContent = fmt(info.kcal); e.append(kc); days++; sum += info.kcal;
+      const an = document.createElement("div"); an.className = "an"; an.textContent = info.net > info.target ? "🐷" : "🐰"; e.append(an);
+      const kc = document.createElement("div"); kc.className = "kc"; kc.textContent = fmt(info.net); e.append(kc); days++; sum += info.net;
     }
     e.onclick = () => { calSel = k; drawCalendar(y, m, first, last); renderDay(k); };
     g.append(e);
@@ -996,8 +1015,8 @@ function renderDay(k) {
   const box = $("dayMeals"); box.innerHTML = "";
   const wt = weights[pid][k];
   if (!info || !info.meals.length) { $("daySum").textContent = "이 날은 식사 기록이 없어요." + (wt ? ` · 체중 ${wt}kg` : ""); return; }
-  const diff = info.kcal - info.target;
-  $("daySum").textContent = (info.kcal > info.target ? "🐷 적정 칼로리 초과 · " : "🐰 적정 칼로리 이하 · ") + `총 ${fmt(info.kcal)} / 목표 ${fmt(info.target)} kcal (${diff > 0 ? "+" : ""}${fmt(diff)}) · 탄 ${r0(info.carbs)}g · 단 ${r0(info.protein)}g · 지 ${r0(info.fat)}g` + (info.alcohol ? ` · 🍺 ${fmt(info.alcohol)}kcal` : "") + (wt ? ` · 체중 ${wt}kg` : "");
+  const diff = info.net - info.target;
+  $("daySum").textContent = (info.net > info.target ? "🐷 적정 칼로리 초과 · " : "🐰 적정 칼로리 이하 · ") + (info.burn > 0 ? `먹은 ${fmt(info.kcal)} − 운동 ${fmt(info.burn)} = ` : "총 ") + `${fmt(info.net)} / 목표 ${fmt(info.target)} kcal (${diff > 0 ? "+" : ""}${fmt(diff)}) · 탄 ${r0(info.carbs)}g · 단 ${r0(info.protein)}g · 지 ${r0(info.fat)}g` + (info.alcohol ? ` · 🍺 ${fmt(info.alcohol)}kcal` : "") + (wt ? ` · 체중 ${wt}kg` : "");
   [...info.meals].sort((a, b) => (a.ts || 0) - (b.ts || 0)).forEach(m => box.append(mealRow(m, true)));
 }
 
@@ -1014,10 +1033,10 @@ async function renderStats() {
   const rec = days.filter(x => x.d && x.d.kcal > 0); statsCache = { days, rec };
   const n = rec.length, c = calc(), p = P();
   $("reportHd").textContent = `💬 ${p.coach || "가족"}의 기간 리포트`;
-  const avg = n ? rec.reduce((s, x) => s + x.d.kcal, 0) / n : 0, avgT = n ? rec.reduce((s, x) => s + x.d.target, 0) / n : c.daily;
-  const keep = rec.filter(x => x.d.kcal <= x.d.target * 1.05).length;
-  const diff = rec.reduce((s, x) => s + (x.d.kcal - x.d.target), 0);
-  const wt = rec.reduce((s, x) => s + (x.d.kcal - x.d.tdee), 0) / 7700;
+  const avg = n ? rec.reduce((s, x) => s + x.d.net, 0) / n : 0, avgT = n ? rec.reduce((s, x) => s + x.d.target, 0) / n : c.daily;
+  const keep = rec.filter(x => x.d.net <= x.d.target * 1.05).length;
+  const diff = rec.reduce((s, x) => s + (x.d.net - x.d.target), 0);
+  const wt = rec.reduce((s, x) => s + (x.d.net - x.d.tdee), 0) / 7700;
   $("sAvg").textContent = n ? fmt(avg) : "-"; $("sAvgS").textContent = n ? `목표 ${fmt(avgT)} kcal` : "기록이 없어요";
   $("sKeep").textContent = n ? `${keep}/${n}일` : "-"; $("sKeepS").textContent = `${period}일 중 ${n}일 기록`;
   $("sDiff").textContent = n ? (diff > 0 ? "+" : "") + fmt(diff) : "-"; $("sDiff").style.color = diff > 0 ? "var(--red)" : "var(--green-d)";
@@ -1091,7 +1110,7 @@ function drawWeight(days) {
   if (!pts.length) { $("wChart").innerHTML = ""; $("wChartNote").textContent = "오늘 탭에서 체중을 기록하면 실제 체중과 식단으로 계산한 예상 체중을 비교해 줘요."; return; }
   // 예상: 첫 체중 기록일부터 (섭취 - 소모)/7700 누적
   const start = pts[0]; const pred = []; let cur = start.kg;
-  days.forEach((x, i) => { if (i < start.i) return; if (i > start.i && x.d) cur += (x.d.kcal - x.d.tdee) / 7700; pred.push({ i, kg: cur }); });
+  days.forEach((x, i) => { if (i < start.i) return; if (i > start.i && x.d) cur += (x.d.net - x.d.tdee) / 7700; pred.push({ i, kg: cur }); });
   const all = pts.map(p => p.kg).concat(pred.map(p => p.kg)); const tgt = num(P().target);
   if (tgt) all.push(tgt);
   let lo = Math.min(...all) - 0.5, hi = Math.max(...all) + 0.5;

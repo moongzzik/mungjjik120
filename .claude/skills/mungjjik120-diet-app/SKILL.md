@@ -23,7 +23,7 @@ description: "'뭉찍 120살' 부부 식단조절 앱(음식 사진 → Gemini �
 
 ## 배포 절차
 1. 개발 브랜치에서 수정 → `node --check app.js`.
-2. **매번 캐시 버전을 올린다**: `index.html`의 `app.js?v=N`과 `sw.js`의 `CACHE = "mj120-vN"`을 같은 N으로 +1. 안 올리면 폰이 예전 app.js를 계속 쓴다. (v22까지 사용됨)
+2. **매번 캐시 버전을 올린다**: `index.html`의 `app.js?v=N`과 `sw.js`의 `CACHE = "mj120-vN"`을 같은 N으로 +1. 안 올리면 폰이 예전 app.js를 계속 쓴다. (v23까지 사용됨)
 3. 커밋 → 푸시 → PR 생성 → merge (GitHub MCP `create_pull_request`, `merge_pull_request`, `expectedHeadSha`는 40자 전체 해시).
 4. Pages 배포 확인: `actions_list`(list_workflow_runs)의 "pages build and deployment"가 머지 커밋 sha로 `success`인지 본다(보통 1분 내외). 이 환경에서는 github.io에 직접 접속이 막혀 있다.
 5. 다음 작업 전엔 `git fetch origin main && git reset --hard origin/main` 후 변경을 다시 얹는다(머지 커밋 위에서 시작).
@@ -31,7 +31,8 @@ description: "'뭉찍 120살' 부부 식단조절 앱(음식 사진 → Gemini �
 ## 구조 요약 (app.js)
 - **저장**: localStorage 키는 `mj:` 접두어 — `pid`(현재 프로필), `profiles`, `weights`(`{pid:{date:kg}}`), `activity`(`{pid:{date:{steps,minutes}}}`), `settings`(`apiKey, model, workingModel, thinkIdx`), `renamed1`. 식사 기록은 IndexedDB `mungjjik` / store `meals`(keyPath `id`, index `date`). 키 이름은 바꾸지 않는다(기존 기록 유지).
 - **프로필**: `p1` 찍찍이 🐭(부르는 말 찍찍아, 잔소리하는 사람 뭉뭉이), `p2` 뭉뭉이 🌸(부르는 말 자기야, 잔소리하는 사람 찍찍이). 예전 "아내" 이름은 `renamed1` 마이그레이션으로 한 번 뭉뭉이로 바뀐다.
-- **칼로리 계산 `calc(p, meals, act, slot)`**: 체지방률 있으면 Katch-McArdle, 없으면 키·나이(Mifflin), 그것도 없으면 체중 간이식. 활동량(걸음·운동분) 반영, 감량 −400 / 증량 +250, 최소 남 1500·여 1200. 끼니 배분(아침·점심·저녁·간식 %)으로 "이번 끼니 허용량" 계산.
+- **칼로리 계산 `calc(p, meals, act, slot)`**: 체지방률 있으면 Katch-McArdle, 없으면 키·나이(Mifflin), 그것도 없으면 체중 간이식. 하루 소모량 = 기초대사량 × **프로필 평소 활동 수준**(오늘 운동과 무관). 감량 −400 / 증량 +250, 최소 남 1500·여 1200 → **하루 목표는 운동해도 바뀌지 않는다**. 끼니 배분(아침·점심·저녁·간식 %)으로 "이번 끼니 허용량" 계산.
+- **운동은 먹은 칼로리에서 뺀다 (v23)**: `exBurn(w, actLevel, act)` = (걸음 − 달리기 걸음 − 평소 걸음 `BASE_STEPS`[1.2:3000, 1.375:5000, 1.55:7000, 1.725:9000])×0.04×(w/70) + 다른 운동 분×6 + 달리기. `calc()`가 `burn`, `net = eaten − burn`, `remain = daily − net`을 준다. 오늘 링·헤더 칩·달력(🐷/🐰·칸 숫자·상세)·분석은 모두 `net`을 쓴다. (v22까지는 운동을 목표에 더해서 "칼로리가 늘어난다"는 혼란이 있었다 — 되돌리지 말 것.)
 - **스캔 흐름**: `openEditor` → `analyzeSource`(사진) 또는 `analyzeText`(글) → `runAnalysis` → `gemini()` → `showResult()` → `saveMeal(portion)`. 결과 화면 상태는 `current`(`r` 원본 분석, `share`, `date`, `dayMeals`, `stat`).
 - **식사 기록 필드**: `person, date, ts, mealType, title, thumb(220px), photo(768px, v19부터·크게 보기용), portion, share, totalKcal, eatenKcal, alcoholKcal, late, eaten{carbs,protein,fat}, dailyTarget, tdee, foods[]`.
 
@@ -43,7 +44,7 @@ description: "'뭉찍 120살' 부부 식단조절 앱(음식 사진 → Gemini �
 - **진단 표시**: 연결 테스트 결과 `✅ 연결 성공 · 사용 모델 · 초`, 스캔 중 경과 초, 결과 화면 `⏱️ ○초 걸림 · 사용 모델 (다른 모델 n번 실패 후)`, 실패 안내에 `[자세한 원인]`과 시도한 모델 순서. 사람마다 속도가 다르면 이 줄을 두 폰에서 비교하게 한다.
 - 오류 문구 `aiError()`: network면 "Google 서버에 연결하지 못했어요(광고 차단·VPN·개인 DNS·와이파이↔데이터)", busy면 "서버가 붐벼요", badkey, rate 등. 한 폰만 안 되면 **키를 다른 폰에 넣어 보는 교차 시험**으로 키 문제/폰 문제를 가른다.
 
-## 현재 기능 (v22)
+## 현재 기능 (v23)
 - **촬영**: 끼니 선택(아침·점심·저녁·간식), 앱 안 카메라·앨범, 남은 칼로리 표시.
 - **📷 여러 장 한 번에**: 앨범 `#fileLib`는 `multiple`. 2장 이상이면 `openEditorQueue()`로 한 장씩 편집(제목 "(1/3)", 버튼 "다음 사진" → "3장 같이 분석") 후 `analyzeSources(canvases)`로 한 요청에 이미지 여러 개(`current.more`)를 보낸다. 최대 `MAX_PHOTOS`=4장. 프롬프트에 "같은 한 끼를 여러 장 찍은 것, 같은 음식은 한 번만 세기"를 붙인다. 대표 사진은 첫 장이고, 기록에는 `photos`(768px 배열)·`thumbs`(220px 배열)를 2장 이상일 때만 같이 저장한다. 오늘·달력 목록은 `.grid` 2×2 미니 격자로 전부 보이고, 크게 보기는 `#pvGal` 옆으로 넘기는 갤러리(“1 / 4”), 결과 화면은 `#resStrip`에 나머지 사진.
 - **✂️ 사진 편집**: 카메라·앨범 사진은 바로 분석하지 않고 `openEditor()` 편집 화면(`#edView`)을 먼저 띄운다. 모서리 4개 손잡이로 자르기, 상자 끌어 옮기기, ↻ 90° 돌리기, ↺ 처음대로, 취소. "이대로 분석"이 자른 캔버스로 `analyzeSource()`를 부른다. 원본은 긴 변 2048px로 줄여 둔다. pointer 이벤트 + `touch-action:none`.

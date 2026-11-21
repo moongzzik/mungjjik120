@@ -23,7 +23,7 @@ description: "'뭉찍 120살' 부부 식단조절 앱(음식 사진 → Gemini �
 
 ## 배포 절차
 1. 개발 브랜치에서 수정 → `node --check app.js`.
-2. **매번 캐시 버전을 올린다**: `index.html`의 `app.js?v=N`과 `sw.js`의 `CACHE = "mj120-vN"`을 같은 N으로 +1. 안 올리면 폰이 예전 app.js를 계속 쓴다. (v23까지 사용됨)
+2. **매번 캐시 버전을 올린다**: `index.html`의 `app.js?v=N`과 `sw.js`의 `CACHE = "mj120-vN"`을 같은 N으로 +1. 안 올리면 폰이 예전 app.js를 계속 쓴다. (v24까지 사용됨)
 3. 커밋 → 푸시 → PR 생성 → merge (GitHub MCP `create_pull_request`, `merge_pull_request`, `expectedHeadSha`는 40자 전체 해시).
 4. Pages 배포 확인: `actions_list`(list_workflow_runs)의 "pages build and deployment"가 머지 커밋 sha로 `success`인지 본다(보통 1분 내외). 이 환경에서는 github.io에 직접 접속이 막혀 있다.
 5. 다음 작업 전엔 `git fetch origin main && git reset --hard origin/main` 후 변경을 다시 얹는다(머지 커밋 위에서 시작).
@@ -44,7 +44,7 @@ description: "'뭉찍 120살' 부부 식단조절 앱(음식 사진 → Gemini �
 - **진단 표시**: 연결 테스트 결과 `✅ 연결 성공 · 사용 모델 · 초`, 스캔 중 경과 초, 결과 화면 `⏱️ ○초 걸림 · 사용 모델 (다른 모델 n번 실패 후)`, 실패 안내에 `[자세한 원인]`과 시도한 모델 순서. 사람마다 속도가 다르면 이 줄을 두 폰에서 비교하게 한다.
 - 오류 문구 `aiError()`: network면 "Google 서버에 연결하지 못했어요(광고 차단·VPN·개인 DNS·와이파이↔데이터)", busy면 "서버가 붐벼요", badkey, rate 등. 한 폰만 안 되면 **키를 다른 폰에 넣어 보는 교차 시험**으로 키 문제/폰 문제를 가른다.
 
-## 현재 기능 (v23)
+## 현재 기능 (v24)
 - **촬영**: 끼니 선택(아침·점심·저녁·간식), 앱 안 카메라·앨범, 남은 칼로리 표시.
 - **📷 여러 장 한 번에**: 앨범 `#fileLib`는 `multiple`. 2장 이상이면 `openEditorQueue()`로 한 장씩 편집(제목 "(1/3)", 버튼 "다음 사진" → "3장 같이 분석") 후 `analyzeSources(canvases)`로 한 요청에 이미지 여러 개(`current.more`)를 보낸다. 최대 `MAX_PHOTOS`=4장. 프롬프트에 "같은 한 끼를 여러 장 찍은 것, 같은 음식은 한 번만 세기"를 붙인다. 대표 사진은 첫 장이고, 기록에는 `photos`(768px 배열)·`thumbs`(220px 배열)를 2장 이상일 때만 같이 저장한다. 오늘·달력 목록은 `.grid` 2×2 미니 격자로 전부 보이고, 크게 보기는 `#pvGal` 옆으로 넘기는 갤러리(“1 / 4”), 결과 화면은 `#resStrip`에 나머지 사진.
 - **✂️ 사진 편집**: 카메라·앨범 사진은 바로 분석하지 않고 `openEditor()` 편집 화면(`#edView`)을 먼저 띄운다. 모서리 4개 손잡이로 자르기, 상자 끌어 옮기기, ↻ 90° 돌리기, ↺ 처음대로, 취소. "이대로 분석"이 자른 캔버스로 `analyzeSource()`를 부른다. 원본은 긴 변 2048px로 줄여 둔다. pointer 이벤트 + `touch-action:none`.
@@ -55,6 +55,7 @@ description: "'뭉찍 120살' 부부 식단조절 앱(음식 사진 → Gemini �
 - **달리기**: `activity[pid][date]`에 `runKm`, `runMin`. `runBurn(w, km, min)` = km 있으면 체중×km, 없으면 MET 9.8 시간식. `calc()`에서 걸음 수에 들어 있을 달리기 걸음(1km≈1,300보, 1분≈160보)을 빼고 더한다(이중 계산 방지). 위쪽 🏃 칩, 달력 날짜 🏃.
 - **기록 삭제**: `mealRow(m, true)`의 ✕는 **두 번 눌러야 삭제**(첫 탭 "삭제?" 빨간 버튼, 3초 뒤 원래대로). 오늘 탭과 달력 날짜 상세 둘 다 있다. 삭제 후 달력이 열려 있으면 `renderCalendar()`로 칸·🐷/🐰을 다시 그린다.
 - **👥 저장한 기록의 비율 고치기**: 크게 보기 화면의 `#pvShareSeg`(혼자 다·3/4·2/3·3/5·1/2·2/5·1/3·1/4) → `changeMealShare(m, v)`가 `v/옛 share` 배율로 totalKcal·eatenKcal·alcoholKcal·eaten·foods를 다시 계산해 IndexedDB에 저장하고 오늘·달력을 다시 그린다.
+- **📝 끼니별 메모**: 기록마다 `memo`(최대 300자). 오늘·달력 기록 줄의 📝 버튼(메모 있으면 진하게) → 크게 보기 열고 `#pvMemo`로 이동, "메모 저장"이 `saveMealMemo(m)`로 IndexedDB에 저장(빈칸이면 삭제). 기록 줄에 노란 📝 메모 2줄까지 표시.
 - **🔍 기록 크게 보기**: 오늘·달력 기록 줄의 사진이나 제목을 누르면 `openPhoto(m)` 전체 화면(`#pvView`) — 큰 사진, 날짜·끼니·칼로리·탄단지·음식 목록. ✕, 바깥 탭, 폰 뒤로 가기(history.pushState/popstate)로 닫힘. 예전 기록은 photo가 없어 thumb을 키워 보여 주고 안내 문구를 띄움. 글 기록은 🍽️ 안내.
 - **달력**: 색 단계(목표 대비), **🐷 하루 적정 칼로리 초과 / 🐰 이하**, 🍺 음주·🌙 야식, 날짜별 상세(잘못 올린 기록 ✕ 삭제).
 - **분석**: 7/30일 평균·목표 지킨 날·누적 차이·예상 체중, 체중 예상 vs 실제, 음주·야식, 영양 비율, 끼니별, 자주 먹은 음식, Gemini 기간 리포트.

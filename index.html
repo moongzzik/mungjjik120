@@ -243,8 +243,8 @@
         <button class="btn primary big" id="openCam">📷 음식 사진 찍기</button>
         <input type="file" id="fileCam" accept="image/*" capture="environment" class="hidden">
         <div style="height:10px"></div>
-        <label class="btn ghost" for="fileLib">🖼️ 앨범에서 사진 고르기</label>
-        <input type="file" id="fileLib" accept="image/*" class="hidden">
+        <label class="btn ghost" for="fileLib">🖼️ 앨범에서 사진 고르기 (여러 장 가능)</label>
+        <input type="file" id="fileLib" accept="image/*" multiple class="hidden">
         <div class="card" style="margin-top:12px;margin-bottom:0">
           <h2>⌨️ 사진 없이 글로 입력</h2>
           <div class="seg" id="txtMealSeg" style="margin-bottom:8px">
@@ -408,6 +408,7 @@
 
       <div class="card">
         <h2>🍽️ 오늘 먹은 것</h2>
+        <p class="muted" style="margin:-4px 0 6px">기록을 누르면 크게 보고, 내가 먹은 비율(1/2 등)을 고칠 수 있어요.</p>
         <div id="mealList"></div>
       </div>
     </section>
@@ -579,7 +580,7 @@
 <!-- 앱 안 카메라 -->
 <!-- [추가] 사진 편집 (자르기·회전) -->
 <div class="ed hidden" id="edView">
-  <div class="ed-top"><b>✂️ 사진 편집</b><span>모서리를 끌어서 내 음식만 남겨 주세요</span></div>
+  <div class="ed-top"><b id="edTitle">✂️ 사진 편집</b><span>모서리를 끌어서 내 음식만 남겨 주세요</span></div>
   <div class="ed-stage" id="edStage"><canvas id="edCanvas"></canvas><div class="ed-box" id="edBox"><i data-h="nw"></i><i data-h="ne"></i><i data-h="sw"></i><i data-h="se"></i></div></div>
   <div class="ed-tools"><button id="edRot">↻ 돌리기</button><button id="edReset">↺ 처음대로</button></div>
   <div class="ed-ctl"><button id="edCancel">취소</button><button id="edGo">✓ 이대로 분석</button></div>
@@ -602,12 +603,17 @@
     <b id="pvTitle"></b>
     <p id="pvSub"></p>
     <ul id="pvFoods"></ul>
+    <p style="margin-top:10px;color:var(--ink);font-weight:700">👥 내가 먹은 비율 고치기</p>
+    <div class="seg" id="pvShareSeg" style="margin:6px 0 0">
+      <button data-s="1">혼자 다</button><button data-s="0.75">3/4</button><button data-s="0.6667">2/3</button>
+      <button data-s="0.5">1/2</button><button data-s="0.3333">1/3</button><button data-s="0.25">1/4</button>
+    </div>
     <p class="pv-old hidden" id="pvOld">예전에 저장한 기록은 작은 사진만 있어서 흐릿하게 보여요. 앞으로 찍는 사진은 선명하게 저장돼요.</p>
   </div>
 </div>
 <div class="toast" id="toast"></div>
 <canvas id="grab" class="hidden"></canvas>
-<script src="app.js?v=19"></script>
+<script src="app.js?v=20"></script>
 <script>
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
 </script>

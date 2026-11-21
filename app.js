@@ -203,7 +203,15 @@ function mealRow(m, withDelete) {
 const SHARE_NAMES = [[1, "혼자 다"], [0.75, "3/4"], [0.6667, "2/3"], [0.5, "1/2"], [0.3333, "1/3"], [0.25, "1/4"]];
 function shareLabel(v) { const f = SHARE_NAMES.find(([x]) => Math.abs(x - v) < 0.01); return f ? f[1] : r0(v * 100) + "%"; }
 /* ================= [추가] 기록 크게 보기 ================= */
+let pvMeal = null;   // [추가] 크게 보기로 열린 기록 (비율 고치기용)
 function openPhoto(m) {
+  fillPhoto(m);
+  $("pvView").classList.remove("hidden");
+  try { history.pushState({ pv: 1 }, ""); } catch (e) { }
+}
+function fillPhoto(m) {
+  pvMeal = m;
+  document.querySelectorAll("#pvShareSeg button").forEach(b => b.classList.toggle("on", Math.abs(+b.dataset.s - (m.share || 1)) < 0.01));
   const big = typeof m.photo === "string" && m.photo.startsWith("data:image/") ? m.photo : (typeof m.thumb === "string" && m.thumb.startsWith("data:image/") ? m.thumb : "");
   $("pvImg").src = big; $("pvImg").classList.toggle("hidden", !big); $("pvNo").classList.toggle("hidden", !!big);
   $("pvOld").classList.toggle("hidden", !big || big === m.photo);
@@ -213,9 +221,21 @@ function openPhoto(m) {
   $("pvSub").textContent = `먹은 양 ${fmt(m.eatenKcal || 0)} kcal${shTxt} · ${m.portion >= 0.99 ? "전부" : "권장량 " + r0((m.portion || 0) * 100) + "%"} · 탄 ${r0(m.eaten?.carbs || 0)}g · 단 ${r0(m.eaten?.protein || 0)}g · 지 ${r0(m.eaten?.fat || 0)}g`;
   const ul = $("pvFoods"); ul.innerHTML = "";
   (m.foods || []).forEach(f => { const li = document.createElement("li"); li.textContent = `${f.alcohol ? "🍺 " : ""}${f.name} · 약 ${fmt(f.grams || 0)}${f.alcohol ? "ml" : "g"} · ${fmt(f.kcal || 0)} kcal`; ul.append(li); });
-  $("pvView").classList.remove("hidden");
-  try { history.pushState({ pv: 1 }, ""); } catch (e) { }
 }
+// [추가] 저장한 기록의 '내가 먹은 비율'을 나중에 바꾸기 — 칼로리·탄단지·음식 양을 비율만큼 다시 계산
+async function changeMealShare(m, v) {
+  const old = m.share || 1; if (Math.abs(old - v) < 0.001) return;
+  const k = v / old, sc = x => Math.round((+x || 0) * k);
+  m.share = v; m.totalKcal = sc(m.totalKcal); m.eatenKcal = sc(m.eatenKcal); m.alcoholKcal = sc(m.alcoholKcal);
+  if (m.eaten) m.eaten = { carbs: sc(m.eaten.carbs), protein: sc(m.eaten.protein), fat: sc(m.eaten.fat) };
+  m.foods = (m.foods || []).map(f => ({ ...f, grams: sc(f.grams), kcal: sc(f.kcal) }));
+  try {
+    await idb.put(m); fillPhoto(m); await loadToday(); renderAll();
+    if ($("v-cal").classList.contains("on")) await renderCalendar();
+    toast(`내가 먹은 비율을 ${shareLabel(v)}로 바꿨어요 · ${fmt(m.eatenKcal)}kcal`);
+  } catch (e) { toast("바꾸지 못했어요. 다시 눌러 주세요"); }
+}
+document.querySelectorAll("#pvShareSeg button").forEach(b => b.onclick = e => { e.stopPropagation(); if (pvMeal) changeMealShare(pvMeal, +b.dataset.s); });
 function closePhoto(fromBack) {
   if ($("pvView").classList.contains("hidden")) return;
   $("pvView").classList.add("hidden"); $("pvImg").src = "";
@@ -298,9 +318,25 @@ $("shutter").onclick = () => {
   const cv = $("grab"); cv.width = v.videoWidth; cv.height = v.videoHeight; cv.getContext("2d").drawImage(v, 0, 0);
   stopCam(); openEditor(cv, cv.width, cv.height, null); // [수정] 바로 분석하지 않고 편집 화면 먼저
 };
+const MAX_PHOTOS = 4;   // [추가] 한 번에 같이 분석할 사진 수
+function loadImage(f) {
+  return new Promise((res, rej) => { const url = URL.createObjectURL(f), img = new Image(); img.onload = () => { URL.revokeObjectURL(url); res(img); }; img.onerror = () => { URL.revokeObjectURL(url); rej(); }; img.src = url; });
+}
 ["fileCam", "fileLib"].forEach(id => $(id).addEventListener("change", async e => {
-  const f = e.target.files && e.target.files[0]; e.target.value = ""; stopCam();
-  if (!f) return;
+  const files = Array.from(e.target.files || []); e.target.value = ""; stopCam();
+  if (!files.length) return;
+  // [추가] 여러 장 고르면: 같은 식사를 여러 각도로 찍은 사진으로 보고 한 번에 분석
+  if (files.length > 1) {
+    if (files.length > MAX_PHOTOS) toast(`사진은 ${MAX_PHOTOS}장까지만 같이 분석해요. 앞의 ${MAX_PHOTOS}장을 쓸게요`);
+    const pick = files.slice(0, MAX_PHOTOS), imgs = [];
+    for (const f of pick) { try { imgs.push(await loadImage(f)); } catch (err) { } }
+    if (!imgs.length) { toast("이미지를 열 수 없어요"); return; }
+    const f0 = pick[0]; let pd = null;
+    if (id === "fileLib" && f0.lastModified) { const k = dKey(new Date(f0.lastModified)); if (k < todayKey() && Date.now() - f0.lastModified < 60 * 864e5) pd = k; }
+    openEditorQueue(imgs.map(im => ({ src: im, w: im.naturalWidth, h: im.naturalHeight })), pd);
+    return;
+  }
+  const f = files[0];
   const url = URL.createObjectURL(f); const img = new Image();
   // 앨범 사진이면 사진 파일 날짜를 기록 날짜 후보로 (최근 60일 안, 오늘 이전만)
   let photoDate = null;
@@ -314,9 +350,18 @@ $("shutter").onclick = () => {
 }));
 /* ================= [추가] 사진 편집 (자르기·회전) ================= */
 let ed = null;
-function openEditor(src, w, h, photoDate) {
-  const base = resize(src, w, h, 2048);          // 메모리 아끼려고 긴 변 2048px까지만
-  ed = { base, rot: 0, photoDate, img: null, crop: null, view: null, drag: null };
+function openEditor(src, w, h, photoDate) { openEditorQueue([{ src, w, h }], photoDate); }
+// [추가] 여러 장이면 한 장씩 차례로 편집한 뒤 모아서 한 번에 분석
+function openEditorQueue(list, photoDate) {
+  ed = { queue: list, idx: 0, done: [], photoDate };
+  editorLoad();
+}
+function editorLoad() {
+  const it = ed.queue[ed.idx];
+  Object.assign(ed, { base: resize(it.src, it.w, it.h, 2048), rot: 0, img: null, crop: null, view: null, drag: null });   // 메모리 아끼려고 긴 변 2048px까지만
+  const n = ed.queue.length;
+  $("edTitle").textContent = n > 1 ? `✂️ 사진 편집 (${ed.idx + 1}/${n})` : "✂️ 사진 편집";
+  $("edGo").textContent = n > 1 && ed.idx < n - 1 ? "✓ 다음 사진" : n > 1 ? `✓ ${n}장 같이 분석` : "✓ 이대로 분석";
   $("edView").classList.remove("hidden");
   ed.img = rotatedImage(); ed.crop = { x: 0, y: 0, w: ed.img.width, h: ed.img.height };
   requestAnimationFrame(layoutEditor);
@@ -378,8 +423,10 @@ $("edGo").onclick = () => {
   const c = ed.crop, cv = document.createElement("canvas");
   cv.width = Math.max(1, Math.round(c.w)); cv.height = Math.max(1, Math.round(c.h));
   cv.getContext("2d").drawImage(ed.img, c.x, c.y, c.w, c.h, 0, 0, cv.width, cv.height);
-  const pd = ed.photoDate; closeEditor();
-  analyzeSource(cv, cv.width, cv.height, pd);
+  ed.done.push(cv);
+  if (ed.idx < ed.queue.length - 1) { ed.idx++; editorLoad(); return; }
+  const pd = ed.photoDate, all = ed.done; closeEditor();
+  analyzeSources(all, pd);
 };
 
 function resize(src, w, h, max) {
@@ -539,16 +586,20 @@ JSON만 출력:
 }`;
 }
 
-async function analyzeSource(src, w, h, photoDate) {
+async function analyzeSource(src, w, h, photoDate) { return analyzeSources([src], photoDate); }
+// [수정] 사진 여러 장(캔버스 목록)을 한 번에 분석 — 첫 장이 대표 사진
+async function analyzeSources(list, photoDate) {
   if (!settings.apiKey) { showErr({ code: "nokey" }); toast(aiError({ code: "nokey" })); return; }
   hideErr();
+  const src = list[0], w = src.width, h = src.height;
+  const more = list.slice(1).map(c => resize(c, c.width, c.height, 768).toDataURL("image/jpeg", .8).split(",")[1]);
   const big = resize(src, w, h, 1024), small = resize(src, w, h, 220);
   const preview = big.toDataURL("image/jpeg", .85);
   const thumb = small.toDataURL("image/jpeg", .6);
   // Gemini에는 조금 더 작은 사진을 보내서 업로드·분석 시간을 줄임
   const send = resize(src, w, h, 768).toDataURL("image/jpeg", .8);
   // [추가] 달력에서 크게 볼 사진(768px)도 기록에 같이 저장
-  current = { preview, thumb, photo: send, b64: send.split(",")[1], late: lateFor(todayKey(), mealType), mealType, date: todayKey(), share: 1, dayMeals: null };
+  current = { preview, thumb, photo: send, b64: send.split(",")[1], more, late: lateFor(todayKey(), mealType), mealType, date: todayKey(), share: 1, dayMeals: null };
   if (photoDate) await setScanDate(photoDate, true);
   await runAnalysis();
 }
@@ -592,7 +643,10 @@ async function runAnalysis(correction) {
   $("busyTime").textContent = "0초";
   const tick = setInterval(() => { $("busyTime").textContent = Math.floor((Date.now() - t0) / 1000) + "초"; }, 1000);
   let r;
-  const parts = noPhoto ? [{ text }] : [{ text }, { inline_data: { mime_type: "image/jpeg", data: current.b64 } }];
+  if (!noPhoto && current.more && current.more.length) {
+    text += `\n\n[중요: 사진 ${current.more.length + 1}장]\n첨부한 사진들은 모두 같은 한 끼를 여러 각도·여러 장으로 찍은 것입니다. 같은 음식이 여러 사진에 보이면 한 번만 세고, 사진마다 다른 음식만 더하세요. 여러 장을 비교해 양을 더 정확히 추정하세요.`;
+  }
+  const parts = noPhoto ? [{ text }] : [{ text }, ...[current.b64, ...(current.more || [])].map(d => ({ inline_data: { mime_type: "image/jpeg", data: d } }))];
   try { r = await gemini(parts, { signal: abortCtl.signal }); }
   catch (e) {
     clearInterval(tick); abortCtl = null;

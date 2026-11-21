@@ -417,7 +417,7 @@
         </div>
         <p class="muted" id="runNote" style="margin:-4px 0 10px"></p>
         <button class="btn ghost" id="saveAct">활동량 반영하기</button>
-        <p class="muted" style="margin-top:8px">비워 두면 평소 활동 수준으로 계산해요. 걸음 수에 달리기 걸음이 들어 있어도 겹치지 않게 빼고 계산해요.</p>
+        <p class="muted" style="margin-top:8px">운동으로 쓴 칼로리는 <b>먹은 칼로리에서 빼요</b>. 걸음은 평소 활동 수준(프로필)에 이미 들어 있는 만큼은 빼고, 그보다 더 걸은 만큼만 세요. 달리기 걸음도 겹치지 않게 빼요.</p>
       </div>
 
       <div class="card">
@@ -629,7 +629,7 @@
 </div>
 <div class="toast" id="toast"></div>
 <canvas id="grab" class="hidden"></canvas>
-<script src="app.js?v=22"></script>
+<script src="app.js?v=23"></script>
 <script>
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
 </script>
